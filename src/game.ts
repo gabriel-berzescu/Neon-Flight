@@ -96,6 +96,17 @@ export class Game {
     if (++this.frames === 3) (window as unknown as { __READY__: boolean }).__READY__ = true;
   };
 
+  /** QA: the cost of `steps` physics steps (ms per step), flown hands-off from a fresh spawn here. */
+  benchPhysics(steps = 1200): number {
+    const s = this.flight.state;
+    this.spawn(s.position.x, s.position.z, s.headingDeg);
+    const c = { stickLeft: 0, stickRight: 0, throttleLeft: 0.8, throttleRight: 0.8 };
+    const t = performance.now();
+    let n = 0;
+    while (n < steps) n += this.flight.update(1 / 120, c) || 1;
+    return (performance.now() - t) / n;
+  }
+
   /** One frame of game time (public so QA scripts can drive it). */
   step(dt: number): void {
     const c = this.controls.poll(dt);
