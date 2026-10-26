@@ -16,6 +16,7 @@
  *   shot=name              screenshot to <out>/<name>.png
  *   state                  print the flight state (speed, altitude, g, attitude, crashed)
  *   perf                   time every frame for 5 s: fps, frame-time percentiles, and how fast game time runs vs real time
+ *   run                    print the canyon run's state (gate, passed, missed, score, combo, status)
  *   eval=<js>              evaluate in the page and print the result (no commas inside: use a separate step)
  * Example: --plan "0:lt=0.8,rt=0.8;1:shot=start;2:ly=0.5,ry=0.5;3:state,shot=pull;3.2:ly=0,ry=0"
  *
@@ -124,6 +125,12 @@ for (const step of steps) {
           }),
       );
       console.log(`[perf ${step.t}s]`, JSON.stringify(r));
+    } else if (k === 'run') {
+      const r = await page.evaluate(() => {
+        const run = window.__nf.run;
+        return run ? { log: run.log.map((e) => `${e.gate.index}${e.result[0]}(${Math.round(e.lateral ?? NaN)},${Math.round(e.vertical ?? NaN)})`).join(' '), mode: window.__nf.mode, next: run.next, of: run.canyon.gates.length, passed: run.passed, missed: run.missed, score: run.score, streak: run.streak, elapsed: +run.elapsed.toFixed(1), status: run.status, menu: window.__nf.menu.title } : { mode: window.__nf.mode, menu: window.__nf.menu.title };
+      });
+      console.log(`[run ${step.t}s]`, JSON.stringify(r));
     } else if (k === 'state') {
       console.log(`[state ${step.t}s]`, JSON.stringify(await state()));
     } else if (k === 'eval') {

@@ -135,6 +135,33 @@ export class Sound {
     this.wasCrashed = s.crashed;
   }
 
+  /** A gate passed (a rising chime, brighter for a bullseye) or missed (a low buzz). */
+  gate(result: 'passed' | 'missed', bullseye = false): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const tone = (freq: number, at: number, len: number, type: OscillatorType, gain: number) => {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.setValueAtTime(freq, t + at);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t + at);
+      g.gain.exponentialRampToValueAtTime(gain, t + at + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + at + len);
+      o.connect(g).connect(this.master as GainNode);
+      o.start(t + at);
+      o.stop(t + at + len + 0.02);
+    };
+    if (result === 'passed') {
+      tone(880, 0, 0.18, 'sine', 0.18);
+      tone(1320, 0.07, 0.22, 'sine', 0.16);
+      if (bullseye) tone(1760, 0.14, 0.3, 'triangle', 0.12);
+    } else {
+      tone(140, 0, 0.3, 'square', 0.08);
+      tone(105, 0.08, 0.3, 'square', 0.06);
+    }
+  }
+
   private crash(): void {
     const ctx = this.ctx;
     if (!ctx || !this.noise || !this.master) return;

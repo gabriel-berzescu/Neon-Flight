@@ -164,7 +164,7 @@ export class Hud {
     e.innerHTML = s;
   }
 
-  update(s: FlightState, c: ControlFrame, camera: THREE.Camera, dt: number, opts: { paused: boolean; respawnIn: number; soundLocked: boolean }): void {
+  update(s: FlightState, c: ControlFrame, camera: THREE.Camera, dt: number, opts: { paused: boolean; respawnIn: number; soundLocked: boolean; menuOpen?: boolean; inRun?: boolean }): void {
     this.text(this.spd, 'spd', Math.round(s.airspeed * 3.6).toString());
     this.text(this.alt, 'alt', Math.round(s.altitude).toString());
     this.text(this.g, 'g', (Math.abs(s.g) < 0.05 ? 0 : s.g).toFixed(1));
@@ -196,11 +196,17 @@ export class Hud {
     this.text(this.warn, 'warn', warn);
     this.warn.classList.toggle('blink', warn === 'pull up');
 
-    if (opts.paused) this.html(this.center, 'center', `<div class="big">paused</div><div class="sub">start / esc to fly</div>`);
+    if (opts.menuOpen) this.html(this.center, 'center', '');
+    else if (opts.inRun) this.html(this.center, 'center', s.crashed ? `<div class="big">crashed</div>` : '');
+    else if (opts.paused) this.html(this.center, 'center', `<div class="big">paused</div><div class="sub">start / esc to fly</div>`);
     else if (s.crashed) this.html(this.center, 'center', `<div class="big">crashed</div><div class="sub">new flight in ${Math.max(1, Math.ceil(opts.respawnIn))}</div>`);
     else this.html(this.center, 'center', '');
 
     // the controls card: shown at the start until the pilot has been flying for a while (real time, crashes included)
+    if (!this.cardGone && (opts.menuOpen || opts.inRun)) {
+      this.cardGone = true;
+      this.card.style.opacity = '0';
+    }
     if (!this.cardGone) {
       if (c.active || this.cardTimer > 0 || s.time > 2) this.cardTimer += dt;
       if (this.cardTimer > 9) {

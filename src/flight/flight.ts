@@ -26,6 +26,8 @@ export interface SpawnOptions {
   z: number;
   /** Height above the ground (m). */
   agl: number;
+  /** Or an exact height above sea level (m), used instead of `agl` when given. */
+  y?: number;
   /** Heading, degrees true (0 = north, 90 = east). */
   heading: number;
   /** True airspeed (m/s). */
@@ -135,7 +137,7 @@ export class Flight {
     const groundH = this.ground(o.x, o.z);
     sim.set('ic/lat-geod-rad', this.ll.lat);
     sim.set('ic/long-gc-rad', this.ll.lon);
-    sim.set('ic/h-sl-ft', (groundH + o.agl) / FT);
+    sim.set('ic/h-sl-ft', (o.y ?? groundH + o.agl) / FT);
     sim.set('ic/psi-true-deg', o.heading);
     sim.set('ic/vt-kts', o.speed / KT);
     sim.set('ic/gamma-deg', 0);

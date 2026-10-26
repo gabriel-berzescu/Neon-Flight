@@ -28,6 +28,8 @@ export interface ControlFrame extends FlightControls {
   throttleRight: number;
   /** Pause pressed this frame (edge). */
   pause: boolean;
+  /** Menu navigation, edges this frame (the D-pad, A / B / X; the arrow keys, Enter, Escape / Backspace, R). Menus only. */
+  nav: { up: boolean; down: boolean; confirm: boolean; back: boolean; retry: boolean };
   /** Any control moved this frame (to hide the help card, unlock audio, ...). */
   active: boolean;
   device: 'gamepad' | 'keyboard' | 'none';
@@ -54,6 +56,12 @@ const AXIS_RIGHT_Y = 3;
 const BTN_LT = 6;
 const BTN_RT = 7;
 const BTN_START = 9;
+const BTN_A = 0;
+const BTN_B = 1;
+const BTN_X = 2;
+const BTN_UP = 12;
+const BTN_DOWN = 13;
+const NAV_BUTTONS = [BTN_UP, BTN_DOWN, BTN_A, BTN_B, BTN_X] as const;
 
 export function shapeStick(v: number): number {
   const a = Math.abs(v);
@@ -72,7 +80,7 @@ export function throttleFor(engine: number): number {
   return Math.sqrt(Math.max(0, Math.min(1, engine)));
 }
 
-const KEYS = new Set(['KeyW', 'KeyS', 'ArrowUp', 'ArrowDown', 'ShiftLeft', 'ShiftRight', 'Space', 'Escape', 'KeyP']);
+const KEYS = new Set(['KeyW', 'KeyS', 'ArrowUp', 'ArrowDown', 'ShiftLeft', 'ShiftRight', 'Space', 'Escape', 'KeyP', 'Enter', 'NumpadEnter', 'Backspace', 'KeyR']);
 /** Keyboard ramps (per second). */
 const KEY_STICK_RATE = 3.0;
 const KEY_STICK_RETURN = 5.0;
@@ -88,11 +96,13 @@ function approach(v: number, target: number, up: number, down: number, dt: numbe
 export class Controls {
   readonly frame: ControlFrame = {
     stickLeft: 0, stickRight: 0, engineLeft: 0, engineRight: 0, throttleLeft: 0, throttleRight: 0,
-    pause: false, active: false, device: 'none', padName: null,
+    pause: false, nav: { up: false, down: false, confirm: false, back: false, retry: false }, active: false, device: 'none', padName: null,
   };
   private readonly held = new Set<string>();
   private pausePending = false;
   private startWasDown = false;
+  private navWasDown: boolean[] = [false, false, false, false, false];
+  private navPending = { up: false, down: false, confirm: false, back: false, retry: false };
   private kb = { l: 0, r: 0, el: 0, er: 0 };
   private lastPadActivity = -Infinity;
   private lastKeyActivity = -Infinity;
@@ -113,6 +123,14 @@ export class Controls {
     if (!KEYS.has(e.code)) return;
     e.preventDefault();
     if (down && !e.repeat && (e.code === 'Escape' || e.code === 'KeyP')) this.pausePending = true;
+    if (down && !e.repeat) {
+      const n = this.navPending;
+      if (e.code === 'ArrowUp') n.up = true;
+      else if (e.code === 'ArrowDown') n.down = true;
+      else if (e.code === 'Enter' || e.code === 'NumpadEnter') n.confirm = true;
+      else if (e.code === 'Escape' || e.code === 'Backspace') n.back = true;
+      else if (e.code === 'KeyR') n.retry = true;
+    }
     if (down) this.held.add(e.code);
     else this.held.delete(e.code);
     this.lastKeyActivity = this.time;
@@ -177,6 +195,16 @@ export class Controls {
     f.padName = pad ? pad.id.replace(/\s*\(.*$/, '').trim() || 'Gamepad' : null;
 
     f.pause = this.pausePending || (start && !this.startWasDown);
+    const navDown = NAV_BUTTONS.map((b) => !!pad?.buttons[b]?.pressed);
+    const edge = (i: number) => navDown[i] && !this.navWasDown[i];
+    const n = this.navPending;
+    f.nav.up = n.up || edge(0);
+    f.nav.down = n.down || edge(1);
+    f.nav.confirm = n.confirm || edge(2);
+    f.nav.back = n.back || edge(3);
+    f.nav.retry = n.retry || edge(4);
+    this.navWasDown = navDown;
+    this.navPending = { up: false, down: false, confirm: false, back: false, retry: false };
     this.pausePending = false;
     this.startWasDown = start;
     f.active =
