@@ -62,8 +62,8 @@ export class Game {
     for (const v of world.views) scene.add(v.object);
     scene.add(this.aircraft.object, this.aircraft.effects, this.burst.object);
     // light for the aircraft: a dim violet sky, the low sun
-    scene.add(new THREE.HemisphereLight(0x6a3cff, 0x0a0614, 1.4));
-    const sun = new THREE.DirectionalLight(PALETTE.sunGlow, 2.2);
+    scene.add(new THREE.HemisphereLight(0x6a3cff, 0x0a0614, 0.55));
+    const sun = new THREE.DirectionalLight(PALETTE.sunGlow, 1.3);
     sun.position.copy(world.sunDirection).multiplyScalar(1000);
     sun.target = this.aircraft.object;
     scene.add(sun);

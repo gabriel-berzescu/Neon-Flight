@@ -131,8 +131,8 @@ function neonLines(points: THREE.Vector3[], material: LineMaterial): LineSegment
 
 /** The body: dark metal under the scene's lights, plus a fresnel rim glow so the silhouette reads against the night sky. */
 function bodyMaterial(): THREE.MeshStandardMaterial {
-  const m = new THREE.MeshStandardMaterial({ color: 0x15132e, roughness: 0.32, metalness: 0.55, side: THREE.DoubleSide });
-  const rim = { value: new THREE.Color(0x7a3cff).multiplyScalar(0.9) };
+  const m = new THREE.MeshStandardMaterial({ color: 0x100e24, roughness: 0.38, metalness: 0.5, side: THREE.DoubleSide });
+  const rim = { value: new THREE.Color(0x7a3cff).multiplyScalar(0.55) };
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uRim = rim;
     shader.fragmentShader = shader.fragmentShader
@@ -198,7 +198,7 @@ class Exhaust {
   constructor(side: 1 | -1) {
     this.group.position.copy(S(NOZZLE_X, side * ENGINE_Y, 0.12));
     this.plumeMat = new THREE.MeshBasicMaterial({ color: neon(PALETTE.amber, 2), transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false });
-    this.coreMat = new THREE.MeshBasicMaterial({ color: neon(0xfff0d0, 2.4), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+    this.coreMat = new THREE.MeshBasicMaterial({ color: neon(0xfff0d0, 1.6), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
     // cones from the nozzle (base) back along +z (apex), stretched by thrust
     const plumeGeo = new THREE.ConeGeometry(0.2, 1, 20, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5);
     const coreGeo = new THREE.ConeGeometry(0.11, 1, 16, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5);
@@ -324,8 +324,8 @@ export class AircraftView {
 
   constructor() {
     const body = bodyMaterial();
-    const edge = new LineMaterial({ color: neon(PALETTE.cyan, 3.2), linewidth: 2.6 });
-    const fins = new LineMaterial({ color: neon(PALETTE.magenta, 3), linewidth: 2.6 });
+    const edge = new LineMaterial({ color: neon(PALETTE.cyan, 2.2), linewidth: 2.4 });
+    const fins = new LineMaterial({ color: neon(PALETTE.magenta, 2.2), linewidth: 2.4 });
     this.lineMaterials.push(edge, fins);
     const wing = new THREE.Mesh(loftWing(), body);
     this.object.add(wing);

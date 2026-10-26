@@ -47,7 +47,11 @@ Top speed is about 1000 km/h (Mach 0.83) at low level, and the stall speed is ab
   ground callback, so JSBSim's contact points and altitude above ground use the game's own procedural terrain. It runs at
   120 Hz, about 25 µs per step. The compiled module (`src/fdm/wasm/`, 1.6 MB) is committed, so building the game needs no
   C++ toolchain.
-- **Terrain and sky:** procedural, generated on the GPU, with the same height function on the CPU for the physics.
+- **Terrain and sky:** an endless procedural landscape (seas, coasts, plains, hills, ridged mountain ranges up to about
+  3 km, valleys and canyons) from integer-hashed gradient noise. The CPU height function is the physics' ground; the GPU
+  renders the very same function (its GLSL is generated from the same tables) as a 9-level geometry clipmap reaching about
+  57 km, with 2 m cells near the camera. Rendered and physical ground agree within about a centimetre. Neon grid and contour
+  lines, a striped synthwave sun due north, stars.
 - **Rendering:** three.js with bloom. **Sound:** synthesised with Web Audio.
 
 ## Develop
@@ -58,6 +62,10 @@ npm run dev          # http://127.0.0.1:5240/
 npm test             # flight-model, controls and terrain tests
 npm run build
 ```
+
+Dev pages: `sandbox/terrain.html` (free camera over the terrain, `?x=&y=&z=&yaw=&pitch=`, `?fly=1`),
+`sandbox/terrain-check.html` (GPU vs CPU heights), `sandbox/flight.html` (the game on a flat stand-in world).
+`node scripts/fly.mjs` flies the game in headless Chrome with a fake F310 and takes screenshots.
 
 Flight-model probe (prints trim, top speed, pulls, rolls, one-engine behaviour):
 

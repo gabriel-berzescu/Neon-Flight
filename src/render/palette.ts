@@ -6,7 +6,7 @@ export const PALETTE = {
   /** Night sky at the zenith. */
   skyZenith: 0x05010d,
   /** Sky at the horizon, which is also the fog colour (distant terrain fades into it). */
-  skyHorizon: 0x2a0b45,
+  skyHorizon: 0x331052,
   /** The low synthwave sun's glow at the horizon. */
   sunGlow: 0xff4fa3,
   /** Primary neon: grid lines, the aircraft's edges. */
