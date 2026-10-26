@@ -28,6 +28,8 @@ import { Sound } from './audio/sound';
 import { generateCanyon, newCanyonSeed, type Canyon } from './world/canyon';
 import { CanyonRun } from './game/canyon-run';
 import { autopilot } from './game/autopilot';
+import { TitleCamera } from './render/title-camera';
+import { loadSettings, ROLL_RATE, saveSettings, type Settings } from './settings';
 
 /** Something in the world that follows the camera (terrain, sky). */
 export interface WorldView {
@@ -59,7 +61,7 @@ const COUNTDOWN = 3.5;
 const RESULTS_DELAY = { crashed: 2.2, finished: 1.6 };
 const BEST_KEY = 'neon-flight.best';
 
-type Mode = 'free' | 'canyon';
+type Mode = 'title' | 'free' | 'canyon';
 
 export class Game {
   readonly stage: Stage;
@@ -73,7 +75,14 @@ export class Game {
   readonly sound = new Sound();
   readonly quality: QualityGovernor;
   flight!: Flight;
-  mode: Mode = 'free';
+  mode: Mode = 'title';
+  readonly settings: Settings = loadSettings();
+  private titleCam!: TitleCamera;
+  /** Where a settings menu goes back to. */
+  private menuReturn: 'title' | 'pause' = 'title';
+  /** The title-menu item a sub-menu was opened from (Back returns there). */
+  private titleSel = 0;
+  private qualityFromUrl = false;
   canyon: Canyon | null = null;
   run: CanyonRun | null = null;
   private chase!: ChaseCamera;
@@ -99,6 +108,7 @@ export class Game {
     this.hud = new Hud(ui);
     this.runHud = new RunHud(ui);
     this.menu = new Menu(ui);
+    this.qualityFromUrl = q !== null;
     this.quality = new QualityGovernor(this.stage, q !== null);
     this.quality.onChange = (name) => this.hud.flash(`graphics: ${name}, for a smooth frame rate`);
     const scene = this.stage.scene;
@@ -117,10 +127,15 @@ export class Game {
     const sim = await createSim();
     this.flight = new Flight(sim, this.world.ground);
     this.chase = new ChaseCamera(this.stage.camera, this.world.ground);
+    this.titleCam = new TitleCamera(this.stage.camera, this.world.baseGround ?? this.world.ground);
+    this.applySettings();
     this.spawn(0, 0, 0);
-    // ?canyon=<seed> (or ?canyon) starts straight in a canyon run, for testing
-    const c = new URLSearchParams(location.search).get('canyon');
+    // ?canyon=<seed> (or ?canyon) starts straight in a canyon run, ?free in free flight (for testing); otherwise the title
+    const params = new URLSearchParams(location.search);
+    const c = params.get('canyon');
     if (c !== null) this.startRun(c === '' ? undefined : +c >>> 0);
+    else if (params.has('free')) this.startFree();
+    else this.openTitle();
     this.last = performance.now();
     requestAnimationFrame(this.frame);
   }
@@ -148,6 +163,7 @@ export class Game {
     }
     const c = this.canyon;
     this.mode = 'canyon';
+    this.showFlight();
     this.run = new CanyonRun(c);
     this.flight.spawn({ x: c.start.x, z: c.start.z, agl: 0, y: c.start.y, heading: c.start.heading, speed: RUN_SPEED, engines: RUN_ENGINES });
     this.holdEngines = RUN_ENGINES;
@@ -171,7 +187,114 @@ export class Game {
     this.countdown = 0;
     this.paused = false;
     this.menu.close();
+    this.showFlight();
     this.spawn(at.x, at.z, at.heading);
+  }
+
+  /** From the title: a new free flight at the start (high above the land, heading north toward the sun). */
+  startFree(): void {
+    this.mode = 'free';
+    this.paused = false;
+    this.countdown = 0;
+    this.menu.close();
+    this.showFlight();
+    this.spawn(0, 0, 0);
+  }
+
+  /** The title screen: the logo over a slow flight across the land, and the main menu. */
+  openTitle(): void {
+    this.mode = 'title';
+    this.run = null;
+    this.canyon = null;
+    this.world.setCanyon?.(null);
+    this.gates.setCanyon(null);
+    this.runHud.hide();
+    this.hud.setVisible(false);
+    this.aircraft.object.visible = false;
+    this.aircraft.effects.visible = false;
+    this.paused = false;
+    this.countdown = 0;
+    this.titleCam.reset(0, 9000);
+    this.showTitleMenu();
+  }
+
+  private showFlight(): void {
+    this.hud.setVisible(true);
+    this.aircraft.effects.visible = true;
+  }
+
+  private showTitleMenu(selected = 0): void {
+    this.menuReturn = 'title';
+    let best = 0;
+    try {
+      best = Number(localStorage.getItem(BEST_KEY) ?? 0) || 0;
+    } catch {
+      // no storage
+    }
+    this.menu.open({
+      title: 'Neon-Flight',
+      style: 'title',
+      body: 'a flying wing &middot; an endless neon world',
+      selected,
+      choices: [
+        { id: 'free', label: 'Free flight' },
+        { id: 'new', label: 'Canyon run', key: best > 0 ? `best ${best}` : undefined },
+        { id: 'settings', label: 'Settings' },
+        { id: 'controls', label: 'Controls' },
+        { id: 'credits', label: 'Credits' },
+      ],
+    });
+  }
+
+  private openSettings(selected = 0): void {
+    this.menuReturn = this.mode === 'title' ? 'title' : 'pause';
+    const s = this.settings;
+    const q = s.quality === 'auto' ? `auto (${QUALITY[this.stage.quality].name} now)` : QUALITY[s.quality].name;
+    this.menu.open({
+      title: 'Settings',
+      style: this.mode === 'title' ? 'title' : 'card',
+      body: this.mode === 'title' ? 'A / enter changes a setting' : undefined,
+      selected,
+      back: 'back',
+      choices: [
+        { id: 'set:quality', label: `graphics: ${this.qualityFromUrl ? 'fixed by the url' : q}` },
+        { id: 'set:roll', label: `roll response: ${s.roll === 'calm' ? 'calm (150°/s)' : 'sharp (230°/s)'}` },
+        { id: 'set:volume', label: `sound: ${Math.round(s.volume * 100)}%` },
+        { id: 'set:fpm', label: `flight-path marker: ${s.fpm ? 'on' : 'off'}` },
+        { id: 'back', label: 'back', key: 'B' },
+      ],
+    });
+  }
+
+  private changeSetting(key: string): void {
+    const s = this.settings;
+    const order: Settings['quality'][] = ['auto', 3, 2, 1, 0];
+    if (key === 'quality') s.quality = order[(order.indexOf(s.quality) + 1) % order.length];
+    else if (key === 'roll') s.roll = s.roll === 'calm' ? 'sharp' : 'calm';
+    else if (key === 'volume') s.volume = s.volume >= 0.99 ? 0 : Math.round((s.volume + 0.2) * 10) / 10;
+    else if (key === 'fpm') s.fpm = !s.fpm;
+    saveSettings(s);
+    this.applySettings();
+    this.openSettings(['quality', 'roll', 'volume', 'fpm'].indexOf(key));
+  }
+
+  private applySettings(): void {
+    const s = this.settings;
+    if (!this.qualityFromUrl) this.quality.setMode(s.quality);
+    this.sound.setVolume(s.volume);
+    this.hud.setFpm(s.fpm);
+    this.flight?.set('fcs/roll-rate-max', ROLL_RATE[s.roll]);
+  }
+
+  private openInfo(which: 'controls' | 'credits'): void {
+    this.menuReturn = 'title';
+    this.menu.open({
+      title: which,
+      style: 'title',
+      body: `<div class="info">${which === 'controls' ? CONTROLS_HTML : CREDITS_HTML}</div>`,
+      back: 'back',
+      choices: [{ id: 'back', label: 'back', key: 'B' }],
+    });
   }
 
   private openPause(): void {
@@ -182,6 +305,7 @@ export class Game {
     } else {
       choices.push({ id: 'new', label: 'Canyon run' });
     }
+    choices.push({ id: 'settings', label: 'Settings' }, { id: 'title', label: 'Main menu' });
     this.menu.open({ title: 'Paused', choices, back: 'resume', retry: this.mode === 'canyon' ? 'retry' : undefined });
   }
 
@@ -215,6 +339,7 @@ export class Game {
         { id: 'new', label: 'New canyon', key: 'A' },
         { id: 'retry', label: 'Fly this canyon again', key: 'X' },
         { id: 'free', label: 'Free flight', key: 'B' },
+        { id: 'title', label: 'Main menu' },
       ],
       back: 'free',
       retry: 'retry',
@@ -227,7 +352,19 @@ export class Game {
       this.menu.close();
     } else if (id === 'new') this.startRun();
     else if (id === 'retry') this.startRun(undefined, true);
-    else if (id === 'free') this.freeFlight();
+    else if (id === 'free') {
+      if (this.mode === 'title') this.startFree();
+      else this.freeFlight();
+    } else if (id === 'title') this.openTitle();
+    else if (id === 'settings' || id === 'controls' || id === 'credits') {
+      if (this.mode === 'title') this.titleSel = ['settings', 'controls', 'credits'].indexOf(id) + 2;
+      if (id === 'settings') this.openSettings();
+      else this.openInfo(id);
+    }
+    else if (id === 'back') {
+      if (this.menuReturn === 'pause') this.openPause();
+      else this.showTitleMenu(this.titleSel);
+    } else if (id.startsWith('set:')) this.changeSetting(id.slice(4));
   }
 
   private frame = (now: number): void => {
@@ -259,7 +396,18 @@ export class Game {
       let choice = this.menu.handle(c.nav);
       if (!choice && c.pause && this.paused) choice = 'resume';
       if (choice) this.pick(choice);
-    } else if (c.pause) this.openPause();
+    } else if (c.pause && this.mode !== 'title') this.openPause();
+
+    if (this.mode === 'title') {
+      this.time += dt;
+      this.quality.frame(dt, true);
+      this.titleCam.update(dt);
+      this.stage.camera.updateMatrixWorld();
+      for (const v of this.world.views) v.update(this.stage.camera, this.time);
+      this.sound.update(f.state, true);
+      this.stage.render();
+      return;
+    }
 
     const frozen = this.paused || this.countdown > 0;
     this.quality.frame(dt, !frozen && !f.state.crashed);
@@ -330,3 +478,21 @@ export class Game {
     this.stage.render();
   }
 }
+
+const CONTROLS_HTML = `<table>
+<tr><td>left stick &#8597;</td><td>left wing</td></tr>
+<tr><td>right stick &#8597;</td><td>right wing</td></tr>
+<tr><td>LT / RT</td><td>left / right engine</td></tr>
+<tr><td>both back / forward</td><td>nose up / down</td></tr>
+<tr><td>one back, one forward</td><td>roll</td></tr>
+<tr><td>START</td><td>pause menu</td></tr>
+</table>
+<p>Centred sticks keep flying where the nose points; a bank up to 60&deg; holds a level turn, pull to tighten it.
+One engine alone yaws the wing a little. The flight-path marker shows where you are really going: put it on a gate.</p>
+<p>Keyboard: W/S and &#8593;/&#8595; for the wings, Left/Right Shift for the engines, Esc to pause.</p>`;
+
+const CREDITS_HTML = `<p><b>Idea, design and test flights</b><br>Gabriel Berzescu</p>
+<p><b>Built by</b><br>Claude (Opus 5.5, Anthropic), with Claude helpers for the terrain, the sky and the canyons</p>
+<p><b>Flight dynamics</b><br>JSBSim, by the JSBSim team (LGPL-2.1), compiled to WebAssembly with Emscripten</p>
+<p><b>Graphics</b><br>three.js (MIT)</p>
+<p>Made on 26 October 2026, in one long session.</p>`;

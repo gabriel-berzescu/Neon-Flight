@@ -26,7 +26,7 @@ Four controls, nothing else. Each stick moves one wing, each trigger is one engi
 | Right stick, up/down | right wing |
 | Left trigger | left engine |
 | Right trigger | right engine |
-| Start | pause menu (resume, canyon run, free flight) |
+| Start | pause menu (resume, canyon run, settings, main menu) |
 
 - Both sticks back pulls the nose up; both forward pushes it down.
 - One back and one forward rolls the wing (left back + right forward rolls left).
@@ -39,6 +39,17 @@ A fly-by-wire sits between the sticks and the elevons, as in a modern fighter:
 - Centred sticks keep the wing flying where its nose points, at any speed and any attitude, so there's no trim to manage.
 - A bank up to 60° holds a level turn; pull to tighten it. Full stick is about +9 g back and -3 g forward.
 - An angle-of-attack limiter keeps the wing out of the stall.
+
+## Menus
+
+The game opens on its title screen: the logo over a slow flight across the land toward the sun. From there: **Free flight**,
+**Canyon run** (your best score beside it), **Settings**, **Controls** and **Credits**. Settings, kept in the browser:
+- **Graphics:** Auto adapts to the GPU, or pick a fixed level from lowest to high.
+- **Roll response:** calm (150°/s at full stick) or sharp (230°/s).
+- **Sound volume.**
+- **Flight-path marker:** on or off.
+
+Start opens the pause menu in flight, with the same settings and a way back to the main menu. `?free` skips the title.
 
 ## Canyon runs
 

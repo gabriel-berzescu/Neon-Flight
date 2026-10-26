@@ -98,6 +98,7 @@ export class Hud {
   private readonly v = new THREE.Vector3();
   private last: Record<string, string> = {};
   private cardTimer = 0;
+  private fpmOn = true;
   private flashText = '';
   private flashLeft = 0;
   private cardGone = false;
@@ -110,6 +111,7 @@ export class Hud {
       document.head.appendChild(st);
     }
     this.root = el('div', 'nf-hud', parent);
+    this.root.style.display = 'none';
     this.hdg = el('div', 'hdg', this.root);
     const row = el('div', 'row', this.root);
     const read = (label: string) => {
@@ -146,6 +148,16 @@ export class Hud {
     this.dev = el('div', 'dev', this.root);
   }
 
+  /** Shown while flying; hidden on the title screen. */
+  setVisible(on: boolean): void {
+    this.root.style.display = on ? 'block' : 'none';
+  }
+
+  /** The flight-path marker on or off (the settings menu). */
+  setFpm(on: boolean): void {
+    this.fpmOn = on;
+  }
+
   /** A short notice in the top-right corner for a few seconds. */
   flash(text: string, seconds = 4): void {
     this.flashText = text;
@@ -175,7 +187,7 @@ export class Hud {
     this.sides[1].set(s.thrust[1] / 11000, c.engineRight, s.elevons[1]);
 
     // flight-path marker: where the velocity vector meets the screen
-    const show = !s.crashed && s.speed > 20;
+    const show = this.fpmOn && !s.crashed && s.speed > 20;
     if (show) {
       this.v.copy(s.velocity).normalize().multiplyScalar(2000).add(s.position).project(camera);
       const vis = this.v.z < 1 && Math.abs(this.v.x) < 1.1 && Math.abs(this.v.y) < 1.1;

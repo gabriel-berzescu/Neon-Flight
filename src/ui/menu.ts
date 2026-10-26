@@ -23,6 +23,10 @@ export interface MenuSpec {
   back?: string;
   /** The choice X / R picks directly. */
   retry?: string;
+  /** 'title': the big logo layout of the title screen (default: a card). */
+  style?: 'card' | 'title';
+  /** The choice selected when the menu opens (an index). */
+  selected?: number;
 }
 
 const CSS = `
@@ -44,6 +48,19 @@ const CSS = `
 .nf-menu li .k { opacity: .6; font-size: 12px; }
 .nf-menu li.sel { background: rgba(255,43,214,.16); color: #fff; box-shadow: inset 0 0 0 1.5px rgba(255,107,230,.8), 0 0 14px rgba(255,43,214,.35);
   text-shadow: 0 0 8px #ff2bd6; }
+.nf-menu.title { align-items: flex-start; padding-top: 14vh; }
+.nf-menu.title .box { background: none; border: none; box-shadow: none; backdrop-filter: none; min-width: 440px; max-width: none; text-align: center; }
+.nf-menu.title h2 { font-size: 66px; letter-spacing: .28em; margin: 0 0 6px; color: #fff; white-space: nowrap;
+  text-shadow: 0 0 8px #ff2bd6, 0 0 22px #ff2bd6, 0 0 60px #ff2bd6, 0 0 4px #22f3ff; }
+.nf-menu.title .body { text-align: center; margin-bottom: 30px; letter-spacing: .35em; text-transform: uppercase; font-size: 13px; opacity: .8; }
+.nf-menu.title ul { max-width: 380px; margin: 0 auto; }
+.nf-menu.title li { background: rgba(7,2,15,.45); }
+.nf-menu .body .info { text-transform: none; letter-spacing: .03em; font-size: 15px; text-align: left; opacity: 1; max-width: 520px; margin: 0 auto;
+  padding: 14px 20px; border-radius: 10px; background: rgba(7,2,15,.72); backdrop-filter: blur(4px); box-shadow: 0 0 24px rgba(7,2,15,.6); }
+.nf-menu .body .info table { border-collapse: collapse; margin: 0 auto 12px; width: auto; }
+.nf-menu .body .info td { padding: 4px 10px; } .nf-menu .body .info td:first-child { color: #ffd27a; text-align: right; }
+.nf-menu .body .info td:last-child { text-align: left; }
+.nf-menu .body .info p { margin: 10px 0; line-height: 1.45; } .nf-menu .body .info b { color: #ff9bf0; font-weight: 600; }
 .nf-menu .help { margin-top: 10px; font-size: 11px; opacity: .55; letter-spacing: .12em; text-transform: uppercase; }
 `;
 
@@ -80,7 +97,8 @@ export class Menu {
 
   open(spec: MenuSpec): void {
     this.spec = spec;
-    this.sel = 0;
+    this.sel = Math.max(0, Math.min(spec.choices.length - 1, spec.selected ?? 0));
+    this.root.classList.toggle('title', spec.style === 'title');
     this.picked = null;
     this.render();
     this.root.classList.add('open');

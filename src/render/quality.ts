@@ -30,7 +30,7 @@ export function gpuName(stage: Stage): string {
 
 export class QualityGovernor {
   readonly gpu: string;
-  private readonly fixed: boolean;
+  private fixed: boolean;
   private settle = SETTLE_S;
   private frames: number[] = [];
   private elapsed = 0;
@@ -40,7 +40,20 @@ export class QualityGovernor {
   constructor(private readonly stage: Stage, fixed: boolean) {
     this.gpu = gpuName(stage);
     this.fixed = fixed;
-    if (fixed) return;
+    if (!fixed) stage.quality = this.remembered();
+  }
+
+  /** 'auto' adapts again, from the level remembered for this GPU; a number fixes that level (the settings menu). */
+  setMode(mode: 'auto' | number): void {
+    this.fixed = mode !== 'auto';
+    this.frames = [];
+    this.elapsed = 0;
+    this.settle = SETTLE_S;
+    this.stage.quality = mode === 'auto' ? this.remembered() : mode;
+  }
+
+  /** The level last settled on for this GPU, else the first guess (low on an integrated GPU, high otherwise). */
+  private remembered(): number {
     let level: number = INTEGRATED.test(this.gpu) ? 1 : QUALITY_HIGH;
     try {
       const saved = JSON.parse(localStorage.getItem(KEY) ?? 'null') as { gpu?: string; level?: number } | null;
@@ -48,7 +61,7 @@ export class QualityGovernor {
     } catch {
       // no storage (private window, blocked): start from the guess
     }
-    stage.quality = level;
+    return level;
   }
 
   /** One frame of real time (seconds); `active` is false while paused or crashed (those frames are not judged). */

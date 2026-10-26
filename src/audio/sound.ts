@@ -70,6 +70,7 @@ class JetVoice {
 export class Sound {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  private volume = 0.8;
   private jets: [JetVoice, JetVoice] | null = null;
   private windFilter: BiquadFilterNode | null = null;
   private windGain: GainNode | null = null;
@@ -88,6 +89,12 @@ export class Sound {
     target.addEventListener('pointerdown', unlock);
   }
 
+  /** Master volume, 0..1 (the settings menu). */
+  setVolume(v: number): void {
+    this.volume = Math.max(0, Math.min(1, v));
+    if (this.master) this.master.gain.value = this.volume;
+  }
+
   get locked(): boolean {
     return !this.ctx || this.ctx.state !== 'running';
   }
@@ -100,7 +107,7 @@ export class Sound {
       this.ctx = ctx;
       this.noise = noiseBuffer(ctx, 3);
       this.master = ctx.createGain();
-      this.master.gain.value = 0.8;
+      this.master.gain.value = this.volume;
       const comp = ctx.createDynamicsCompressor();
       this.master.connect(comp).connect(ctx.destination);
       this.jets = [new JetVoice(ctx, this.noise, this.master, -0.55), new JetVoice(ctx, this.noise, this.master, 0.55)];
