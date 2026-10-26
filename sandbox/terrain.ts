@@ -8,6 +8,10 @@
  *   ?bloom=0 ?dpr=1 ?cull=0 ?freeze=1  render options (freeze: time stands still, for image diffs)
  *   ?debug=1|2|3|4 ?wire=1   clipmap level colours / morph amount / flat green (cracks) / geometry; wireframe
  *   ?hud=0                  hide the corner text (for clean screenshots)
+ *   ?canyon=<seed>          carve that canyon run (src/world/canyon-field.ts) and start at its mouth, looking along it, 75 m above the
+ *                           floor (x/z/y/yaw from the URL are ignored then; ?cs=<metres> starts that far along the centreline instead,
+ *                           ?cagl= at that height above the floor, ?clat= metres to the right of the centreline)
+ *   ?q=lowest|low|medium|high (or 0..3)  the game's quality levels (pixel ratio, MSAA, bloom), as in index.html?q=
  *   mouse drag = look, W/S/A/D = move, Q/E = down/up, Shift = fast, Ctrl = slow, wheel = base speed, F = toggle the 250 m/s flight
  *
  * The corner shows fps, CPU ms per frame and the GPU ms per frame of the whole pipeline (EXT_disjoint_timer_query_webgl2, median of 60).
@@ -17,7 +21,10 @@ import * as THREE from 'three';
 import { Stage } from '../src/render/stage';
 import { SkyView } from '../src/render/sky';
 import { TerrainView } from '../src/render/terrain';
-import { groundAt, heightAt } from '../src/world/terrain';
+import { QUALITY } from '../src/render/stage';
+import { generateCanyon } from '../src/world/canyon';
+import { buildCanyonField, type CanyonField } from '../src/world/canyon-field';
+import { baseHeightAt, groundAt, heightAt, setActiveCanyon } from '../src/world/terrain';
 
 declare global {
   interface Window {
@@ -34,6 +41,10 @@ const hud = document.getElementById('hud') as HTMLDivElement;
 if (q.get('hud') === '0') hud.style.display = 'none';
 const stage = new Stage(canvas, { maxPixelRatio: num('dpr', 1.5), bloom: q.get('bloom') !== '0' });
 stage.renderer.info.autoReset = false;
+if (q.has('q')) {
+  const ql = q.get('q')!;
+  stage.quality = /^\d$/.test(ql) ? +ql : QUALITY.findIndex((l) => l.name === ql);
+}
 const sky = new SkyView();
 const terrain = new TerrainView();
 terrain.cull = q.get('cull') !== '0';
@@ -46,6 +57,30 @@ stage.scene.add(terrain.object);
 const cam = stage.camera;
 const view = { x: num('x', 0), y: num('y', 600), z: num('z', 0), yaw: num('yaw', 0), pitch: num('pitch', -8) };
 if (q.has('alt')) view.y = groundAt(view.x, view.z) + num('alt', 500);
+
+// ---- a canyon run
+let canyonField: CanyonField | null = null;
+if (q.has('canyon')) {
+  const c = generateCanyon(num('canyon', 1) >>> 0, baseHeightAt);
+  canyonField = buildCanyonField(c);
+  setActiveCanyon(canyonField);
+  terrain.setCanyon(canyonField);
+  console.info(`canyon ${c.seed}: field built in ${canyonField.buildMs.toFixed(0)} ms, ${canyonField.nx} x ${canyonField.nz} texels of ${canyonField.cell} m (${(canyonField.data.byteLength / 1048576).toFixed(1)} MB), ${c.gates.length} gates`);
+  if (q.has('cs')) {
+    const i = Math.max(0, Math.min(c.n - 1, Math.round(num('cs', 0) / 10)));
+    const lat = num('clat', 0);
+    view.x = c.x[i] - c.tz[i] * lat;
+    view.z = c.z[i] + c.tx[i] * lat;
+    view.y = c.floor[i] + num('cagl', 75);
+    view.yaw = (Math.atan2(c.tx[i], -c.tz[i]) * 180) / Math.PI;
+  } else {
+    view.x = c.start.x;
+    view.z = c.start.z;
+    view.y = q.has('cagl') ? c.floor[12] + num('cagl', 75) : c.start.y;
+    view.yaw = c.start.heading;
+  }
+  if (!q.has('pitch')) view.pitch = -3;
+}
 const flySpeed = num('speed', 250);
 let fly = q.get('fly') === '1';
 const agl = num('agl', 0);
@@ -297,4 +332,4 @@ function stats(n = 600): Record<string, number> {
   };
 }
 
-window.__sandbox = { setView, bench, stats, firstFrame: () => firstFrameMs, view, stage, terrain, sky, heightAt, groundAt };
+window.__sandbox = { setView, bench, stats, firstFrame: () => firstFrameMs, view, stage, terrain, sky, heightAt, groundAt, canyon: () => canyonField };

@@ -1,12 +1,25 @@
 import { Game } from './game';
-import { groundAt } from './world/terrain';
+import { baseHeightAt, groundAt, setActiveCanyon } from './world/terrain';
+import { buildCanyonField } from './world/canyon-field';
 import { TerrainView } from './render/terrain';
 import { SkyView, SUN_DIRECTION } from './render/sky';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const ui = document.getElementById('ui') as HTMLElement;
 
-const game = new Game(canvas, ui, { ground: groundAt, views: [new SkyView(), new TerrainView()], sunDirection: SUN_DIRECTION });
+const terrain = new TerrainView();
+const game = new Game(canvas, ui, {
+  ground: groundAt,
+  baseGround: baseHeightAt,
+  views: [new SkyView(), terrain],
+  sunDirection: SUN_DIRECTION,
+  // a canyon run carves its canyon into both the physics' ground and the rendered terrain
+  setCanyon: (canyon) => {
+    const field = canyon ? buildCanyonField(canyon) : null;
+    setActiveCanyon(field);
+    terrain.setCanyon(field);
+  },
+});
 game.boot().catch((err: unknown) => {
   console.error(err);
   const pre = document.createElement('pre');

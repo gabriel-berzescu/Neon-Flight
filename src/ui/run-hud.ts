@@ -13,7 +13,7 @@ const CSS = `
 .nf-run .bar b { font-size: 22px; color: #fff; }
 .nf-run .bar .score b { color: #ffd27a; text-shadow: 0 0 10px #ff9a40; font-size: 26px; }
 .nf-run .bar .combo b { color: #ff6be6; text-shadow: 0 0 10px #ff2bd6; }
-.nf-run .pop { position: absolute; top: 62%; left: 50%; transform: translate(-50%, 0); text-align: center; font-size: 26px; transition: none; }
+.nf-run .pop { position: absolute; top: 19%; left: 50%; transform: translate(-50%, 0); text-align: center; font-size: 26px; transition: none; }
 .nf-run .pop.pass { color: #8dffbf; text-shadow: 0 0 10px #2dff8a, 0 0 28px #2dff8a; }
 .nf-run .pop.miss { color: #ff7088; text-shadow: 0 0 10px #ff3355, 0 0 28px #ff3355; }
 .nf-run .pop small { display: block; font-size: 14px; opacity: .85; margin-top: 2px; }

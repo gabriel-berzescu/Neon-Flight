@@ -2,11 +2,12 @@
  * A dev autopilot for QA (`?autopilot=1`): flies a canyon run's gates through the same four controls a pilot has, so a scripted
  * browser run can thread gates, take screenshots inside the canyon and check the run's scoring in real physics.
  *
- * It steers for a point on the next gate's approach line (inside its opening, a little before it, then the gate itself), banks
- * to turn (the fly-by-wire holds a level turn in a bank), climbs or descends on the flight path, and holds about 180 m/s.
+ * Between gates it follows the canyon's centreline 300 m ahead, 70 m above the floor (it knows nothing of walls otherwise);
+ * within 400 m of the next gate it steers for that gate's approach line, then the gate itself. It banks to turn and pulls for
+ * the turn rate it needs, climbs or descends on the flight path, and holds about 180 m/s.
  */
 import type { FlightState } from '../flight/flight';
-import type { Gate } from '../world/canyon';
+import { CANYON_STEP, type Canyon, type Gate } from '../world/canyon';
 
 export interface AutopilotOutput {
   stickLeft: number;
@@ -18,15 +19,24 @@ export interface AutopilotOutput {
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 const D = Math.PI / 180;
 
-export function autopilot(s: FlightState, gate: Gate | undefined): AutopilotOutput {
+export function autopilot(s: FlightState, gate: Gate | undefined, canyon?: Canyon, progress = 0): AutopilotOutput {
   const out: AutopilotOutput = { stickLeft: 0, stickRight: 0, throttleLeft: 0.7, throttleRight: 0.7 };
-  if (!gate) return out;
+  if (!gate && !canyon) return out;
   const p = s.position;
-  // the aim: on the gate's axis, 120 m before it while still far, the gate's centre when close
-  const toGate = (gate.x - p.x) * gate.tx + (gate.z - p.z) * gate.tz;
-  const lead = clamp(toGate - 60, 0, 120);
-  const ax = gate.x - gate.tx * lead;
-  const az = gate.z - gate.tz * lead;
+  let ax: number, az: number, ay: number;
+  const toGate = gate ? (gate.x - p.x) * gate.tx + (gate.z - p.z) * gate.tz : Infinity;
+  if (gate && toGate < 400) {
+    // on the gate's axis, 120 m before it while still far, the gate's centre when close
+    const lead = clamp(toGate - 60, 0, 120);
+    ax = gate.x - gate.tx * lead;
+    az = gate.z - gate.tz * lead;
+    ay = gate.y;
+  } else if (canyon) {
+    const i = Math.min(canyon.n - 1, Math.round((progress + 300) / CANYON_STEP));
+    ax = canyon.x[i];
+    az = canyon.z[i];
+    ay = canyon.floor[i] + 70;
+  } else return out;
   const dx = ax - p.x;
   const dz = az - p.z;
   const dist = Math.hypot(dx, dz);
@@ -43,7 +53,7 @@ export function autopilot(s: FlightState, gate: Gate | undefined): AutopilotOutp
   const pull = clamp((nWant - nFbw) / 7, 0, 0.7);
   // flight path toward the gate's height
   const gamma = Math.atan2(s.velocity.y, Math.hypot(vx, vz));
-  const gammaWant = clamp(Math.atan2(gate.y - p.y, Math.max(dist, 150)) * 1.4, -20 * D, 20 * D);
+  const gammaWant = clamp(Math.atan2(ay - p.y, Math.max(dist, 150)) * 1.4, -20 * D, 20 * D);
   const pitch = clamp(((gammaWant - gamma) / D) * 0.06 + pull, -1, 1);
   out.stickLeft = clamp(pitch - roll, -1, 1);
   out.stickRight = clamp(pitch + roll, -1, 1);

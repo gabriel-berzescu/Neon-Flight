@@ -12,7 +12,7 @@
  * separated by `,`:
  *   ly=0.6  ry=-0.6        left / right stick Y (+1 = pulled back)
  *   lt=0.8  rt=1           left / right trigger
- *   start=1 / start=0      the Start button
+ *   start=1 / start=0      the Start button (also a, b, x, up, down: A, B, X and the D-pad)
  *   shot=name              screenshot to <out>/<name>.png
  *   state                  print the flight state (speed, altitude, g, attitude, crashed)
  *   perf                   time every frame for 5 s: fps, frame-time percentiles, and how fast game time runs vs real time
@@ -89,7 +89,7 @@ const state = () =>
       elevons: s.elevons.map((v) => r(v, 2)), crashed: s.crashed, pos: [Math.round(s.position.x), Math.round(s.position.z)],
     };
   });
-const pad = { ly: [1, 'axis'], ry: [3, 'axis'], lt: [6, 'btn'], rt: [7, 'btn'], start: [9, 'btn'] };
+const pad = { ly: [1, 'axis'], ry: [3, 'axis'], lt: [6, 'btn'], rt: [7, 'btn'], start: [9, 'btn'], a: [0, 'btn'], b: [1, 'btn'], x: [2, 'btn'], up: [12, 'btn'], down: [13, 'btn'] };
 for (const step of steps) {
   const wait = t0 + step.t * 1000 - Date.now();
   if (wait > 0) await page.waitForTimeout(wait);

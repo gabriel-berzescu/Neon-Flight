@@ -13,13 +13,22 @@
  *     1024 m), and as a control 4 mm either side of a point where none does. The mesh error map (|mesh - heightAt|) must not
  *     change more across the snap than across the control: a pop would show as a jump. Result: window.__CHECK_SNAP__.
  *
+ * ?canyon=<seed>: the same three checks for a canyon run (src/world/canyon-field.ts) carved into both: the CPU's heightAt (via
+ * setActiveCanyon) and the GPU's (canyonApply after terrainHD, TerrainView.setCanyon). The height check samples around origins all
+ * along the canyon and across it (floor, walls, rim, mesa); the mesh check looks at the walls from inside the canyon and also
+ * reports the error measured perpendicular to the surface (on a wall of slope 8, 1 cm sideways is 8 cm of height); the snap check
+ * puts the camera on the clipmap snap point nearest to the canyon.
+ *
  * window.__READY__ = true when done.
  * Run:  node scripts/shot.mjs "sandbox/terrain-check.html" --port 5242 --ready --eval "window.__CHECK__"
+ *       node scripts/shot.mjs "sandbox/terrain-check.html?canyon=123" --port 5242 --ready --eval "[window.__CHECK__, window.__CHECK_MESH__, window.__CHECK_SNAP__]"
  */
 import * as THREE from 'three';
-import { heightAt, terrainLattice, TERRAIN_SLOT_COUNT } from '../src/world/terrain';
-import { TERRAIN_HEIGHT_GLSL } from '../src/render/terrainGlsl';
-import { TerrainView } from '../src/render/terrain';
+import { baseHeightAt, heightAt, setActiveCanyon, terrainLattice, TERRAIN_SLOT_COUNT } from '../src/world/terrain';
+import { CANYON_GLSL, TERRAIN_HEIGHT_GLSL } from '../src/render/terrainGlsl';
+import { CanyonUniforms, TerrainView } from '../src/render/terrain';
+import { generateCanyon, type Canyon } from '../src/world/canyon';
+import { buildCanyonField, type CanyonField } from '../src/world/canyon-field';
 
 declare global {
   interface Window {
@@ -33,13 +42,26 @@ declare global {
 const N = 36; // samples per side per origin
 const STEP = 4.1; // metres between samples
 
+// ?canyon=<seed>: carve that canyon run into both sides
+const params = new URLSearchParams(location.search);
+let canyon: Canyon | null = null;
+let field: CanyonField | null = null;
+const canyonUniforms = new CanyonUniforms();
+if (params.has('canyon')) {
+  canyon = generateCanyon(+params.get('canyon')! >>> 0, baseHeightAt);
+  field = buildCanyonField(canyon);
+  setActiveCanyon(field);
+  canyonUniforms.set(field);
+}
+
 const FRAG = /* glsl */ `
 ${TERRAIN_HEIGHT_GLSL}
+${CANYON_GLSL}
 uniform vec2 uCam;
 void main() {
   vec2 ij = floor(gl_FragCoord.xy);
   vec2 p = (ij - ${(N / 2 - 0.5).toFixed(1)}) * ${STEP.toFixed(2)};
-  vec3 hd = terrainHD(p, uCam);
+  vec3 hd = canyonApply(terrainHD(p, uCam), p);
   gl_FragColor = vec4(hd, 1.0);
 }
 `;
@@ -56,7 +78,7 @@ const target = new THREE.WebGLRenderTarget(N, N, {
 });
 const lattice = new Float32Array(TERRAIN_SLOT_COUNT * 4);
 const material = new THREE.ShaderMaterial({
-  uniforms: { uSlot: { value: lattice as unknown as THREE.Vector4[] }, uCam: { value: new THREE.Vector2() } },
+  uniforms: { uSlot: { value: lattice as unknown as THREE.Vector4[] }, uCam: { value: new THREE.Vector2() }, ...canyonUniforms.uniforms },
   vertexShader: VERT,
   fragmentShader: FRAG,
 });
@@ -79,6 +101,19 @@ for (let i = 0; i < 150; i++) {
   const r = i < 50 ? 8000 : i < 100 ? 80000 : 300000;
   origins.push([Math.floor((rnd() * 2 - 1) * r / 2) * 2, Math.floor((rnd() * 2 - 1) * r / 2) * 2]);
 }
+if (canyon) {
+  // all along the canyon (from behind the mouth to past the exit) and across it: floor, walls, rim, mesa, the fade
+  origins.length = 0;
+  for (let s = -150; s <= canyon.length + 150; s += 200) {
+    const i = Math.max(0, Math.min(canyon.n - 1, Math.round(s / 10)));
+    const ext = s < 0 ? s : s > canyon.length ? s - canyon.length : 0;
+    for (const lat of [0, -60, 60, -130, 130, -220, 450, -1500]) {
+      const x = canyon.x[i] + canyon.tx[i] * ext - canyon.tz[i] * lat;
+      const z = canyon.z[i] + canyon.tz[i] * ext + canyon.tx[i] * lat;
+      origins.push([Math.floor(x / 2) * 2, Math.floor(z / 2) * 2]);
+    }
+  }
+}
 
 const buf = new Float32Array(N * N * 4);
 let maxErr = 0;
@@ -92,6 +127,7 @@ let nonSea = 0;
 renderer.setRenderTarget(target);
 for (const [ox, oz] of origins) {
   terrainLattice(ox, oz, lattice);
+  canyonUniforms.update(ox, oz);
   // the camera is a little off the origin, like in the game (the origin is the camera snapped to 2 m)
   (material.uniforms.uCam.value as THREE.Vector2).set(0.7, 1.3);
   renderer.render(scene, camera);
@@ -163,6 +199,7 @@ const meshTarget = new THREE.WebGLRenderTarget(MW, MH, {
 });
 const terrain = new TerrainView();
 terrain.debugMode = 5;
+terrain.setCanyon(field);
 const meshScene = new THREE.Scene();
 meshScene.add(terrain.object);
 const cam = new THREE.PerspectiveCamera(65, MW / MH, 0.5, 60000);
@@ -177,9 +214,23 @@ const views: Array<{ x: number; z: number; agl: number; yaw: number; pitch: numb
   { x: 123456.1, z: -99999.9, agl: 200, yaw: 100, pitch: -70, maxDist: 400 },
   { x: -2047.9, z: 2049.1, agl: 60, yaw: 45, pitch: -40, maxDist: 400 },
 ];
+if (canyon) {
+  // inside the canyon: along it, at the walls, and down into it from above the rim
+  views.length = 0;
+  const yawAt = (i: number): number => (Math.atan2(canyon!.tx[i], -canyon!.tz[i]) * 180) / Math.PI;
+  for (const s of [600, 2500, 5000, 8000, 10000, 11600]) {
+    const i = Math.round(s / 10);
+    const x = canyon.x[i] + 0.37;
+    const z = canyon.z[i] + 0.71;
+    views.push({ x, z, agl: 40, yaw: yawAt(i), pitch: -12, maxDist: 400 });
+    views.push({ x, z, agl: 60, yaw: yawAt(i) + 90, pitch: -5, maxDist: 400 });
+    views.push({ x, z, agl: canyon.rim[i] - canyon.floor[i] + 150, yaw: yawAt(i) + 20, pitch: -70, maxDist: 400 });
+  }
+}
 const meshResults: unknown[] = [];
 const nearErr: number[] = [];
 const midErr: number[] = [];
+const nearPerp: number[] = [];
 renderer.setClearColor(0x000000, 0);
 for (const v of views) {
   const gy = Math.max(heightAt(v.x, v.z), 0);
@@ -208,9 +259,21 @@ for (const v of views) {
     const dz = oz + lz - v.z;
     const dist = Math.hypot(dx, dz);
     if (dist > v.maxDist) continue;
-    const e = Math.abs(ly - heightAt(ox + lx, oz + lz));
+    const wx = ox + lx;
+    const wz = oz + lz;
+    const hc = heightAt(wx, wz);
+    const e = Math.abs(ly - hc);
     errs.push(e);
-    if (dist <= 120) errsNear.push(e);
+    if (dist <= 120) {
+      errsNear.push(e);
+      if (canyon) {
+        // perpendicular to the surface: the height error over sqrt(1 + slope^2)
+        const d = 0.25;
+        const gx = (heightAt(wx + d, wz) - heightAt(wx - d, wz)) / (2 * d);
+        const gz = (heightAt(wx, wz + d) - heightAt(wx, wz - d)) / (2 * d);
+        nearPerp.push(e / Math.sqrt(1 + gx * gx + gz * gz));
+      }
+    }
   }
   errs.sort((a, b) => a - b);
   errsNear.sort((a, b) => a - b);
@@ -233,7 +296,8 @@ const summary = (a: number[]): Record<string, number> => ({
   p999: pct(a, 0.999),
   max: a[a.length - 1],
 });
-window.__CHECK_MESH__ = { near: summary(nearErr), mid: summary(midErr), views: meshResults };
+nearPerp.sort((a, b) => a - b);
+window.__CHECK_MESH__ = { near: summary(nearErr), mid: summary(midErr), ...(canyon ? { nearPerpendicular: summary(nearPerp) } : {}), views: meshResults };
 
 // ---- 3. no pops across clipmap snaps
 const bufA = new Float32Array(MW * MH * 4);
@@ -284,6 +348,28 @@ const snapViews: Array<[number, number, number, number, number]> = [
   [-2048, 3072, 80, 200, -5],
   [250880, -280576, 200, 60, -10],
 ];
+if (canyon) {
+  // the clipmap snap points (multiples of 1024 m: every level re-centres there) nearest to the canyon's centreline
+  snapViews.length = 0;
+  const found: Array<[number, number, number]> = [];
+  for (let i = 0; i < canyon.n; i += 5) {
+    const sx = Math.round(canyon.x[i] / 1024) * 1024;
+    const sz = Math.round(canyon.z[i] / 1024) * 1024;
+    let best = Infinity;
+    for (let j = 0; j < canyon.n; j += 2) best = Math.min(best, Math.hypot(canyon.x[j] - sx, canyon.z[j] - sz));
+    if (!found.some((f) => f[0] === sx && f[1] === sz)) found.push([sx, sz, best]);
+  }
+  found.sort((a, b) => a[2] - b[2]);
+  for (const [sx, sz] of found.slice(0, 4)) {
+    // look at the nearest centreline point, from 150 m above the ground
+    let bi = 0;
+    for (let j = 0; j < canyon.n; j++) if (Math.hypot(canyon.x[j] - sx, canyon.z[j] - sz) < Math.hypot(canyon.x[bi] - sx, canyon.z[bi] - sz)) bi = j;
+    const dx = canyon.x[bi] - sx;
+    const dz = canyon.z[bi] - sz;
+    const yaw = Math.hypot(dx, dz) > 1 ? (Math.atan2(dx, -dz) * 180) / Math.PI : (Math.atan2(canyon.tx[bi], -canyon.tz[bi]) * 180) / Math.PI;
+    snapViews.push([sx, sz, 150, yaw, -20]);
+  }
+}
 const snapResults: unknown[] = [];
 let snapWorst = 0;
 let controlWorst = 0;

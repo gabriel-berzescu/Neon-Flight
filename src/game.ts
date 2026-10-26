@@ -267,7 +267,7 @@ export class Game {
       this.time += dt;
       if (c.engineLeft > 0.08 || c.engineRight > 0.08) this.holdEngines = 0;
       const hold = Math.sqrt(this.holdEngines);
-      const ap = this.autopilot && this.run ? autopilot(f.state, this.run.canyon.gates[this.run.next]) : null;
+      const ap = this.autopilot && this.run ? autopilot(f.state, this.run.canyon.gates[this.run.next], this.run.canyon, this.run.progress) : null;
       f.update(
         dt,
         ap ?? {

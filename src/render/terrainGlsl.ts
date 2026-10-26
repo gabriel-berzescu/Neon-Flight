@@ -3,10 +3,14 @@
  * noise, the same formulas and parameters (they are pasted in from there), evaluated in float32 relative to a camera-snapped
  * origin so it stays precise 300 km from the world origin. It also returns the gradient (dual numbers: vec3(value, d/dx, d/dz))
  * for the shading normals. Keep it in step with heightAt(): sandbox/terrain-check.html compares the two.
+ * CANYON_GLSL is the twin of the canyon carve (src/world/canyon-field.ts): canyonApply(terrainHD(p, cam), p) is the canyon run's
+ * terrain; the vertex shader carves the mesh with it, the fragment shader again per pixel for the shading.
  */
 import {
   HRIDGE_NORM, OCTAVES, RIDGE_NORM, SLOT, TERRAIN_FADE_END, TERRAIN_FADE_START, TERRAIN_SLOT_COUNT, TERRAIN_SLOT_LAMBDA, TERRAIN_SLOT_M, TP,
 } from '../world/terrain';
+import { CANYON_STEP } from '../world/canyon';
+import { CF } from '../world/canyon-field';
 import { SKY_COMMON_GLSL } from './skyGlsl';
 
 /** Grid cells per clipmap level side (vertices = cells + 1). Multiple of 4. */
@@ -18,6 +22,8 @@ export const TERRAIN_LEVELS = 9;
 /** The terrain's height band (m) for frustum culling: centre and half height. heightAt() stays inside [-1100, 3900] (it reaches about [-600, 3000]). */
 export const CULL_YMID = 1400;
 export const CULL_HY = 2500;
+/** Clipmap levels with cells at least this big (m) shade a canyon run per pixel; the finer ones carve their vertex normals. */
+export const CANYON_PIXEL_CELL = 4;
 /** Terrain fog: fully fogged well before the far edge of the mesh. */
 export const TERRAIN_FOG_DISTANCE = 21000;
 /**
@@ -297,6 +303,116 @@ vec3 terrainHD(vec2 p, vec2 cam) {
 `;
 
 // ----------------------------------------------------------------------------------------------------------------------------
+// The canyon run's carve: the GLSL twin of carveHeight() / CanyonField.apply() in src/world/canyon-field.ts (same float32 data,
+// same bilinear order, same formulas). The field's texels are addressed like the noise lattice: the CPU gives the cell and
+// fraction of the camera-snapped origin in the field's grid (float64 there), the shader adds the local offset.
+// ----------------------------------------------------------------------------------------------------------------------------
+export const CANYON_GLSL = /* glsl */ `
+uniform float uCanyonOn;
+uniform highp sampler2D uCanyonField;  // nx x nz RGBA32F: dist, s, mesa mask, mesa height
+uniform highp sampler2D uCanyonSec;    // n x 1 RGBA32F: floor, rim, half, wall per centreline sample
+uniform vec4 uCanyonGrid;              // origin in the field's grid: cell x, cell z, fraction x, fraction z
+uniform vec4 uCanyonDim;               // nx, nz, 1 / cell size, n
+uniform vec4 uCanyonBox;               // the field's extent relative to the origin: min x, min z, max x, max z
+uniform float uCanyonLen;              // centreline length (m)
+
+#define CF_STEP ${fl(CANYON_STEP)}
+#define CF_SKIP ${fl(CF.skip)}
+#define CF_FOOT ${fl(CF.foot)}
+#define CF_RIM_ROUND ${fl(CF.rimRound)}
+#define CF_KMIN ${fl(CF.kMin)}
+#define CF_STEEP_START ${fl(CF.steepStart)}
+#define CF_STEEP_Q ${fl(CF.steepQ)}
+#define CF_MESA_K ${fl(CF.mesaK)}
+#define CF_EPS ${fl(CF.gradStep)}
+
+float cfSmin(float a, float b, float k) {
+  float hh = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+  return b + (a - b) * hh - k * hh * (1.0 - hh);
+}
+
+// the carve for base height h, field values f = (dist, s, mask, mesa height) and section q = (floor, rim, half, wall)
+// the canyon's cross-section at the field values f and section q, and the width k of its smooth minimum with the land
+float canyonCut(vec4 f, vec4 q, out float k) {
+  float depth = max(q.y - q.x, 0.0);
+  float a = CF_FOOT * q.w;
+  float slope = depth / (q.w - 0.5 * a);
+  float sn = max(-f.y, 0.0);
+  float sp = max(f.y - uCanyonLen, 0.0);
+  float r = sqrt(f.x * f.x + sn * sn + sp * sp);
+  float t = r - q.z;
+  float ramp = t <= 0.0 ? 0.0 : t < a ? t * t / (2.0 * a) : t - 0.5 * a;
+  float u = max(t - q.w - CF_STEEP_START, 0.0);
+  k = max((slope + 2.0 * CF_STEEP_Q * u) * CF_RIM_ROUND * q.w, CF_KMIN);
+  return q.x + slope * ramp + CF_STEEP_Q * u * u;
+}
+
+float canyonCarve(float h, vec4 f, vec4 q) {
+  float raised = h + f.z * (-cfSmin(-h, -f.w, CF_MESA_K) - h);
+  float k;
+  float cut = canyonCut(f, q, k);
+  return cfSmin(raised, cut, k);
+}
+
+// The field at the local position p: f = (dist, s, mask, mesa height), its derivatives fx, fz in this cell (per metre), the
+// section q = (floor, rim, half, wall) at s and dq = d/ds of it. False where the carve is the identity (outside the field, or
+// beyond the canyon's reach with no mesa).
+bool canyonFetch(vec2 p, out vec4 f, out vec4 fx, out vec4 fz, out vec4 q, out vec4 dq) {
+  if (uCanyonOn < 0.5 || p.x < uCanyonBox.x || p.y < uCanyonBox.y || p.x > uCanyonBox.z || p.y > uCanyonBox.w) return false;
+  vec2 g = uCanyonGrid.zw + p * uCanyonDim.z;
+  vec2 fg = floor(g);
+  vec2 fr = g - fg;
+  ivec2 c = ivec2(uCanyonGrid.xy) + ivec2(fg);
+  ivec2 cmax = ivec2(uCanyonDim.xy) - 2;
+  if (c.x > cmax.x) { fr.x += float(c.x - cmax.x); c.x = cmax.x; }
+  if (c.y > cmax.y) { fr.y += float(c.y - cmax.y); c.y = cmax.y; }
+  if (c.x < 0) { fr.x += float(c.x); c.x = 0; }
+  if (c.y < 0) { fr.y += float(c.y); c.y = 0; }
+  vec4 t00 = texelFetch(uCanyonField, c, 0);
+  vec4 t10 = texelFetch(uCanyonField, c + ivec2(1, 0), 0);
+  vec4 t01 = texelFetch(uCanyonField, c + ivec2(0, 1), 0);
+  vec4 t11 = texelFetch(uCanyonField, c + ivec2(1, 1), 0);
+  vec4 a = t00 + (t10 - t00) * fr.x;
+  vec4 b = t01 + (t11 - t01) * fr.x;
+  f = a + (b - a) * fr.y;
+  if (f.z <= 0.0 && f.x >= CF_SKIP) return false;
+  fx = ((t10 - t00) + ((t11 - t01) - (t10 - t00)) * fr.y) * uCanyonDim.z;
+  fz = (b - a) * uCanyonDim.z;
+  // the section at s: linear between samples, clamped to the ends
+  float w = clamp(f.y, 0.0, uCanyonLen) / CF_STEP;
+  float si = min(floor(w), uCanyonDim.w - 2.0);
+  float sf = w - si;
+  vec4 q0 = texelFetch(uCanyonSec, ivec2(int(si), 0), 0);
+  vec4 q1 = texelFetch(uCanyonSec, ivec2(int(si) + 1, 0), 0);
+  q = q0 + (q1 - q0) * sf;
+  dq = (f.y > 0.0 && f.y < uCanyonLen) ? (q1 - q0) / CF_STEP : vec4(0.0);
+  return true;
+}
+
+// The carve with its gradient, from fetched field values: a finite difference of the carve with the base hd = vec3(height, d/dx,
+// d/dz), the field and the section linearised in this cell (no extra texture reads).
+vec3 canyonCarveD(vec3 hd, vec4 f, vec4 fx, vec4 fz, vec4 q, vec4 dq) {
+  float h0 = canyonCarve(hd.x, f, q);
+  float hx = canyonCarve(hd.x + CF_EPS * hd.y, f + CF_EPS * fx, q + (CF_EPS * fx.y) * dq);
+  float hz = canyonCarve(hd.x + CF_EPS * hd.z, f + CF_EPS * fz, q + (CF_EPS * fz.y) * dq);
+  return vec3(h0, (hx - h0) / CF_EPS, (hz - h0) / CF_EPS);
+}
+
+// The canyon carved into the base height h at the local position p (heights only).
+float canyonHeight(float h, vec2 p) {
+  vec4 f, fx, fz, q, dq;
+  return canyonFetch(p, f, fx, fz, q, dq) ? canyonCarve(h, f, q) : h;
+}
+
+// The canyon carved into hd = vec3(height, d/dx, d/dz) at the local position p, with the gradient (for the shading).
+vec3 canyonApply(vec3 hd, vec2 p) {
+  vec4 f, fx, fz, q, dq;
+  if (!canyonFetch(p, f, fx, fz, q, dq)) return hd;
+  return canyonCarveD(hd, f, fx, fz, q, dq);
+}
+`;
+
+// ----------------------------------------------------------------------------------------------------------------------------
 // The clipmap vertex shader. Level k is a square grid of TERRAIN_CELLS cells of size c = 2 * 2^k metres (hole cut out where the finer
 // level k-1 lies), world-fixed: vertex (i, j) is at (i - N/2) * c + shift, relative to the camera-snapped origin. Near its outer rim
 // a level morphs to the next coarser one: odd vertices slide to the lower even neighbour, so the rim coincides with the coarse
@@ -304,12 +420,14 @@ vec3 terrainHD(vec2 p, vec2 cam) {
 // ----------------------------------------------------------------------------------------------------------------------------
 export const TERRAIN_VERT = /* glsl */ `
 ${TERRAIN_HEIGHT_GLSL}
+${CANYON_GLSL}
 
 #define HALF_CELLS ${fl(TERRAIN_CELLS / 2)}
+#define CANYON_PIXEL_CELL ${fl(CANYON_PIXEL_CELL)}
 #define MORPH1 ${fl(TERRAIN_CELLS / 2 - 2.5)}
 #define MORPH0 ${fl(TERRAIN_CELLS / 2 - 2.5 - TERRAIN_MORPH_CELLS)}
 
-uniform vec4 uLevel;  // cell size (m), shift x, shift z (the level's centre relative to the origin), unused
+uniform vec4 uLevel;  // cell size (m), shift x, shift z (the level's centre relative to the origin), level index
 uniform vec2 uCam;    // camera relative to the origin (m)
 uniform vec4 uPlanes[6];  // the view frustum's planes in local space: inside where dot(xyz, p) + w >= 0 (all zero = no culling)
 
@@ -330,6 +448,7 @@ varying vec3 vLocal;
 varying vec3 vNormal;
 varying vec3 vView;
 varying vec2 vDebug;  // level, morph amount
+varying vec3 vBase;   // the base terrain (height, d/dx, d/dz) before the canyon carve: the fragment shader carves it again per pixel
 
 void main() {
   vec2 idx = position.xz;
@@ -342,8 +461,33 @@ void main() {
   // Vertices whose whole column (every height the terrain can have, plus the reach of the triangles around them) is outside the
   // view frustum cannot touch a visible triangle: skip the expensive part and give them a harmless height.
   vec3 hd = vec3(CULL_YMID, 0.0, 0.0);
-  if (!outsideFrustum(vec3(P.x, CULL_YMID, P.y), vec3(3.0 * c, CULL_HY, 3.0 * c))) hd = terrainHD(P, uCam);
-  float h = hd.x;
+  float h = CULL_YMID;
+  vBase = hd;
+  if (!outsideFrustum(vec3(P.x, CULL_YMID, P.y), vec3(3.0 * c, CULL_HY, 3.0 * c))) {
+    // A canyon run. Where the mesa is fully raised (mask 1: the land is at least its height) and the canyon's cross-section lies
+    // at least k below that height, the carve is the cross-section whatever the land: the floor and most of the walls skip the
+    // base terrain (most of this shader's cost). They hand the fragment shader the mesa as their base, which is the same there.
+    // (Nothing from the field is kept across terrainHD(): it would hold registers through the costliest part of the shader.)
+    vec4 f, fx, fz, q, dq;
+    bool carve = canyonFetch(P, f, fx, fz, q, dq);
+    float k = 0.0;
+    if (carve && f.z >= 1.0 && canyonCut(f, q, k) + k <= f.w) {
+      hd = vec3(f.w, fx.w, fz.w);
+      vBase = hd;
+      // On the finest levels the vertices are close enough to follow the walls: carve with the gradient here. On the coarser ones
+      // the mesh only takes the carved height, and the fragment shader carves vBase again per pixel for the shading.
+      if (c < CANYON_PIXEL_CELL) hd = canyonCarveD(hd, f, fx, fz, q, dq);
+      else hd.x = canyonCarve(hd.x, f, q);
+    } else {
+      hd = terrainHD(P, uCam);
+      vBase = hd;
+      if (carve) {
+        if (c < CANYON_PIXEL_CELL) hd = canyonApply(hd, P);
+        else hd.x = canyonHeight(hd.x, P);
+      }
+    }
+    h = hd.x;
+  }
   vec4 mv = modelViewMatrix * vec4(P.x, max(h, 0.0), P.y, 1.0);
   gl_Position = projectionMatrix * mv;
   vLocal = vec3(P.x, h, P.y);
@@ -355,6 +499,7 @@ void main() {
 
 export const TERRAIN_FRAG = /* glsl */ `
 ${SKY_COMMON_GLSL}
+${CANYON_GLSL}
 
 uniform vec2 uGridOff;     // (origin - grid shift) modulo 5000 m, so the lines are fixed to the world
 uniform float uTime;
@@ -369,6 +514,10 @@ varying vec3 vLocal;
 varying vec3 vNormal;
 varying vec3 vView;
 varying vec2 vDebug;
+varying vec3 vBase;
+uniform vec4 uLevel;
+#define CANYON_PIXEL_CELL ${fl(CANYON_PIXEL_CELL)}
+#define CANYON_PIXEL_HEIGHT_CELL 8.0
 uniform float uDebug;  // 0 = normal, 1 = colour by level, 2 = morph amount, 3 = flat green (any other pixel in the terrain area is a crack), 4 = geometry (height, slope), 5 = the fragment's position (local x, raw height, local z) as floats, for sandbox/terrain-check
 
 #define FOG_DISTANCE ${fl(TERRAIN_FOG_DISTANCE)}
@@ -415,11 +564,23 @@ void main() {
   vec3 wdir = (vec4(vView / dist, 0.0) * viewMatrix).xyz;   // view direction in world space
   vec3 hz = skyHorizonColor(wdir);                           // the sky at the horizon that way: the fog colour
 
+  // In a canyon run, on the coarser clipmap levels, the carve is evaluated again here, per pixel, from the interpolated base terrain
+  // (smooth, so interpolating it is exact enough): the walls are far sharper than those levels' cells, so the shading normal, the
+  // contour lines and the floor's edge follow the true surface instead of zigzagging along the triangles. (The finest level has
+  // carved vertex normals: per pixel there would cost the most pixels for the least gain.)
   float h = vLocal.y;
+  vec3 n = normalize(vNormal);
+  if (uCanyonOn > 0.5 && uLevel.x >= CANYON_PIXEL_CELL) {
+    vec3 cd = canyonApply(vBase, vLocal.xz);
+    if (cd != vBase) {
+      // (the height too, for the contour lines, but only where the triangles are still close to the true surface: on the
+      // coarsest levels a pixel can lie metres off the true wall, and true-height contours there would bunch up in spikes)
+      if (uLevel.x <= CANYON_PIXEL_HEIGHT_CELL) h = cd.x;
+      n = cd.x > 0.0 ? normalize(vec3(-cd.y, 1.0, -cd.z)) : vec3(0.0, 1.0, 0.0);
+    }
+  }
   float fwh = fwidth(h);
   float wat = 1.0 - smoothstep(-fwh, fwh, h);                // 1 on water, antialiased at the shore
-
-  vec3 n = normalize(vNormal);
 
   // fog; lines dim with distance a little before the fog takes them
   float fd = dist / FOG_DISTANCE;

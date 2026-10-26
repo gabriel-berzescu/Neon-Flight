@@ -2,8 +2,9 @@
  * The terrain, CPU side: the single source of truth for collisions. World axes and units: see coords.ts (+x east, +y up, +z SOUTH,
  * metres, sea level y = 0).
  *
- * `heightAt(x, z)` is a pure, deterministic function of two numbers (no Math.random, no state, no allocation) built from
- * integer-hashed gradient noise. The GPU renders the very same function (src/render/terrainGlsl.ts is its GLSL twin and takes its
+ * `baseHeightAt(x, z)` is a pure, deterministic function of two numbers (no Math.random, no state, no allocation) built from
+ * integer-hashed gradient noise. `heightAt(x, z)` is that with the active canyon run carved in (setActiveCanyon: the one piece of
+ * state, a precomputed field, src/world/canyon-field.ts); with none it is baseHeightAt exactly. The GPU renders the very same function (src/render/terrainGlsl.ts is its GLSL twin and takes its
  * tables and parameters from this file), so the mesh you see is the surface you hit.
  *
  * Shape of the world (all tunables are in TP below):
@@ -19,6 +20,8 @@
  * (octave) has its own rotation, wavelength and lattice offset. The GPU never sees absolute coordinates: it gets, per slot, the
  * lattice cell and fraction of the camera-snapped origin computed here in float64 (`terrainLattice`) and adds small local offsets.
  */
+
+import type { CanyonField } from './canyon-field';
 
 export const SEA_LEVEL = 0;
 
@@ -358,8 +361,11 @@ function ridged(s0: number, count: number, gain: number, decay: number, eps0: nu
   return sum / norm;
 }
 
-/** Raw terrain height in metres (negative below sea level). */
-export function heightAt(x: number, z: number): number {
+/**
+ * The base terrain's height in metres (negative below sea level): the endless world WITHOUT any canyon carved in. The canyon
+ * generator lays canyons out over this (src/world/canyon.ts); everything that flies or draws uses heightAt().
+ */
+export function baseHeightAt(x: number, z: number): number {
   // domain warp
   const px = x + WARP * nz(S_WARP, x, z);
   const pz = z + WARP * nz(S_WARP + 1, x, z);
@@ -429,6 +435,29 @@ export function heightAt(x: number, z: number): number {
     h += land * DETAIL_AMP * sum * (0.35 + 0.65 * (mm + mh - mm * mh));
   }
   return h;
+}
+
+// ------------------------------------------------------------------------------------------------------------------------
+// The active canyon run: carved into the terrain by a precomputed field (src/world/canyon-field.ts). The GPU carves the same
+// field (TerrainView.setCanyon), so the picture keeps matching the physics: set both together.
+// ------------------------------------------------------------------------------------------------------------------------
+let activeCanyon: CanyonField | null = null;
+
+/** Carves `field`'s canyon into heightAt / groundAt (null: the plain terrain again, exactly). */
+export function setActiveCanyon(field: CanyonField | null): void {
+  activeCanyon = field;
+}
+
+/** The canyon carved into heightAt / groundAt now, if any. */
+export function getActiveCanyon(): CanyonField | null {
+  return activeCanyon;
+}
+
+/** Terrain height in metres (negative below sea level), with the active canyon (if any) carved in. */
+export function heightAt(x: number, z: number): number {
+  const h = baseHeightAt(x, z);
+  // (apply() returns h untouched outside the canyon's bounds: one bounds check)
+  return activeCanyon === null ? h : activeCanyon.apply(h, x, z);
 }
 
 /** The solid surface: terrain, or the sea surface where the terrain is below sea level (touching water counts as a crash). */

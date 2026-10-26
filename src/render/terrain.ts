@@ -12,8 +12,13 @@
  * Precision: the vertex shader works in positions relative to `origin`, the camera snapped to 2 m. The object sits at `origin`
  * (three.js builds the model-view matrix in float64), so everything the GPU sees is a small number. The noise lattice offsets for
  * that origin come from terrainLattice() in float64. World-fixed lines (grid) use the origin modulo 5000 m (after the grid shift).
+ *
+ * A canyon run (setCanyon) uploads its carve field (src/world/canyon-field.ts) as two float textures; the vertex shader carves it
+ * into the terrain after the base height, addressed like the noise lattice (CanyonUniforms: the origin's cell and fraction in
+ * the field's grid, float64 here). Set the same field on the CPU side (setActiveCanyon) so the physics flies the same canyon.
  */
 import * as THREE from 'three';
+import type { CanyonField } from '../world/canyon-field';
 import { groundAt, TERRAIN_SLOT_COUNT, terrainLattice } from '../world/terrain';
 import { PALETTE } from './palette';
 import { SKY_UNIFORMS } from './skyGlsl';
@@ -53,6 +58,77 @@ function buildGeometry(hole: { dx: number; dz: number } | null, positions: THREE
   return g;
 }
 
+/**
+ * The uniforms of the canyon carve (CANYON_GLSL in terrainGlsl.ts): the field's textures and, per origin, where the origin lies in
+ * the field's grid. Used by TerrainView, and by sandbox/terrain-check to test the GLSL against the CPU.
+ */
+export class CanyonUniforms {
+  readonly uniforms = {
+    uCanyonOn: { value: 0 },
+    uCanyonField: { value: emptyFloatTexture() as THREE.Texture },
+    uCanyonSec: { value: emptyFloatTexture() as THREE.Texture },
+    uCanyonGrid: { value: new THREE.Vector4() },
+    uCanyonDim: { value: new THREE.Vector4(2, 2, 1, 2) },
+    uCanyonBox: { value: new THREE.Vector4() },
+    uCanyonLen: { value: 0 },
+  };
+  private field: CanyonField | null = null;
+  private textures: THREE.DataTexture[] = [];
+
+  get active(): CanyonField | null {
+    return this.field;
+  }
+
+  set(field: CanyonField | null): void {
+    for (const t of this.textures) t.dispose();
+    this.textures = [];
+    this.field = field;
+    const u = this.uniforms;
+    if (!field) {
+      u.uCanyonOn.value = 0;
+      return;
+    }
+    const tex = (data: Float32Array, w: number, h: number): THREE.DataTexture => {
+      const t = new THREE.DataTexture(data, w, h, THREE.RGBAFormat, THREE.FloatType);
+      t.minFilter = THREE.NearestFilter;
+      t.magFilter = THREE.NearestFilter;
+      t.generateMipmaps = false;
+      t.needsUpdate = true;
+      this.textures.push(t);
+      return t;
+    };
+    u.uCanyonField.value = tex(field.data, field.nx, field.nz);
+    u.uCanyonSec.value = tex(field.section, field.n, 1);
+    u.uCanyonDim.value.set(field.nx, field.nz, 1 / field.cell, field.n);
+    u.uCanyonLen.value = field.length;
+    u.uCanyonOn.value = 1;
+  }
+
+  /** Per origin (the camera-snapped origin the shader's positions are relative to; float64 here). */
+  update(ox: number, oz: number): void {
+    const f = this.field;
+    if (!f) return;
+    const gx = (ox - f.x0) / f.cell;
+    const gz = (oz - f.z0) / f.cell;
+    const cx = Math.floor(gx);
+    const cz = Math.floor(gz);
+    this.uniforms.uCanyonGrid.value.set(cx, cz, gx - cx, gz - cz);
+    this.uniforms.uCanyonBox.value.set(f.minX - ox, f.minZ - oz, f.maxX - ox, f.maxZ - oz);
+  }
+
+  dispose(): void {
+    this.set(null);
+    this.uniforms.uCanyonField.value.dispose();
+    this.uniforms.uCanyonSec.value.dispose();
+  }
+}
+
+function emptyFloatTexture(): THREE.DataTexture {
+  const t = new THREE.DataTexture(new Float32Array(4), 1, 1, THREE.RGBAFormat, THREE.FloatType);
+  t.needsUpdate = true;
+  return t;
+}
+
 export class TerrainView {
   readonly object = new THREE.Group();
 
@@ -63,6 +139,7 @@ export class TerrainView {
   private readonly meshes: THREE.Mesh[] = [];
   private readonly materials: THREE.ShaderMaterial[] = [];
   private readonly lattice = new Float32Array(TERRAIN_SLOT_COUNT * 4);
+  private readonly canyon = new CanyonUniforms();
 
   private readonly shared = {
     uSlot: { value: this.lattice as unknown as THREE.Vector4[] },
@@ -78,6 +155,7 @@ export class TerrainView {
     uMagenta: { value: new THREE.Color(PALETTE.magenta) },
     uAmber: { value: new THREE.Color(PALETTE.amber) },
     ...SKY_UNIFORMS,
+    ...this.canyon.uniforms,
   };
 
   private readonly tmp = new THREE.Vector3();
@@ -129,6 +207,14 @@ export class TerrainView {
     this.object.name = 'terrain';
   }
 
+  /**
+   * Carves a canyon run into the picture (null: the plain terrain). Pass the field given to setActiveCanyon() (src/world/terrain.ts),
+   * so the physics and the picture agree. Uploads two float textures (the field: 4-12 MB; the section table: 19 KB).
+   */
+  setCanyon(field: CanyonField | null): void {
+    this.canyon.set(field);
+  }
+
   /** Call every frame before rendering. */
   update(camera: THREE.PerspectiveCamera, timeSeconds: number): void {
     camera.updateMatrixWorld();
@@ -146,6 +232,7 @@ export class TerrainView {
     this.shared.uTime.value = timeSeconds;
     this.shared.uAgl.value = this.tmp.y - groundAt(cx, cz);
     terrainLattice(ox, oz, this.lattice);
+    this.canyon.update(ox, oz);
     this.updatePlanes(camera);
 
     for (let k = 0; k < TERRAIN_LEVELS; k++) {
@@ -189,6 +276,7 @@ export class TerrainView {
     this.full.dispose();
     for (const g of this.holes) g.dispose();
     for (const m of this.materials) m.dispose();
+    this.canyon.dispose();
     this.object.clear();
   }
 }

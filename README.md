@@ -26,7 +26,7 @@ Four controls, nothing else. Each stick moves one wing, each trigger is one engi
 | Right stick, up/down | right wing |
 | Left trigger | left engine |
 | Right trigger | right engine |
-| Start | pause |
+| Start | pause menu (resume, canyon run, free flight) |
 
 - Both sticks back pulls the nose up; both forward pushes it down.
 - One back and one forward rolls the wing (left back + right forward rolls left).
@@ -39,6 +39,25 @@ A fly-by-wire sits between the sticks and the elevons, as in a modern fighter:
 - Centred sticks keep the wing flying where its nose points, at any speed and any attitude, so there's no trim to manage.
 - A bank up to 60° holds a level turn; pull to tighten it. Full stick is about +9 g back and -3 g forward.
 - An angle-of-attack limiter keeps the wing out of the stall.
+
+## Canyon runs
+
+Start, then **Canyon run**: a new canyon every time. Each run gets a fresh seed:
+- it raises a mesa somewhere in the endless world and carves a winding slot canyon into it, about 12 km long, 70–160 m wide
+  and around 200 m deep, cutting straight through any mountain in its way;
+- about 18 gates hang inside it at different heights and offsets, smaller as the run goes on;
+- a diamond marks the next gate, or an arrow points to it when it's off screen.
+
+Scoring:
+- **Gates:** each one flown through is 100, +50 for a bullseye through its middle third.
+- **Combo:** gates in a row multiply the score, +0.25 each up to ×3, and a miss resets it.
+- **Finish:** 25 points for every second under the par time, and 500 for a perfect run.
+- **Crash:** a wall ends the run with the score so far.
+
+Afterwards: **New canyon** (A), **Fly this canyon again** (X), or **Free flight** (B). The best score is kept in the browser.
+
+The canyon is carved into the same terrain function the physics flies on, so the walls you see are the walls you hit: rendered and
+physical ground agree to millimetres. `?canyon=<seed>` starts straight into that canyon.
 
 ## The aircraft
 
