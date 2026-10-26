@@ -1,0 +1,27 @@
+{
+  "name": "neon-flight",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Neon-Flight: free flight over procedural neon terrain, flown with a gamepad, on the JSBSim flight dynamics engine.",
+  "scripts": {
+    "dev": "vite --port 5240 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 5241 --strictPort",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build:jsbsim": "node scripts/build-jsbsim.mjs"
+  },
+  "dependencies": {
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/three": "^0.186.0",
+    "playwright-core": "^1.64.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.4"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "jsbsim": {
+    "repo": "https://github.com/JSBSim-Team/jsbsim.git",
+    "tag": "v1.3.3"
+  },
+  "bridgeSha256": "315ebd48e1bbae78c5b04f0f81fd9be0921a39aa85b48e71493e2dc9f58e0bb2",
+  "emscripten": "emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 6.0.13 (e13ee988ce3d87a738dd8f3661d02223308c412a)",
+  "compileFlags": [
+    "-O3",
+    "-fwasm-exceptions",
+    "-DJSBSIM_VERSION=\"1.3.3\""
+  ],
+  "linkFlags": [
+    "-O3",
+    "-fwasm-exceptions",
+    "-lembind",
+    "-sMODULARIZE=1",
+    "-sEXPORT_ES6=1",
+    "-sEXPORT_NAME=createJSBSim",
+    "-sENVIRONMENT=web,node",
+    "-sALLOW_MEMORY_GROWTH=1",
+    "-sINITIAL_MEMORY=33554432",
+    "-sSTACK_SIZE=1048576",
+    "-sFILESYSTEM=1",
+    "-sFORCE_FILESYSTEM=1",
+    "-sEXPORTED_RUNTIME_METHODS=FS"
+  ],
+  "wasmBytes": 1644846
+}
