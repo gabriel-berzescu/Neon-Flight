@@ -1,0 +1,681 @@
+<?xml version="1.0"?>
+<!--
+  Neon-Flight: the NEON WING, a small two-jet flying wing for JSBSim.
+
+  No tail, no rudder. Two elevons (one per wing, trailing edge up = positive) and two jets, one each side of the centre line.
+  The game drives four inputs and nothing else:
+    fcs/stick-left-cmd    left stick  Y, -1 pushed forward .. +1 pulled back   (moves the LEFT elevon)
+    fcs/stick-right-cmd   right stick Y, the same                               (moves the RIGHT elevon)
+    fcs/throttle-cmd-norm[0]   left trigger  -> left engine   (0..1)
+    fcs/throttle-cmd-norm[1]   right trigger -> right engine  (0..1)
+  Both sticks back = nose up, both forward = nose down, opposite = roll (left back + right forward = roll left).
+  One engine alone pushes the nose a little toward the idle side (the jets are 0.75 m off the centre line).
+
+  Between the sticks and the elevons sits a fly-by-wire (see the flight_control section): the sticks ask for load factor and
+  roll rate, centred sticks keep the wing flying where it points, and an angle-of-attack limiter keeps it out of the stall.
+
+  Geometry (structural frame: x aft from the nose, y right, z up, metres): 6.4 m long, 9.0 m span, 22 m^2, swept 35 deg.
+  The game's 3D model (src/render/aircraft.ts) is built from the same numbers.
+  Units are SI where JSBSim converts them; the aerodynamic functions are the usual qbar(psf) * S(ft^2) [* b or c (ft)] * coefficient.
+-->
+<fdm_config name="Neon Wing" version="2.0" release="ALPHA">
+  <fileheader>
+    <author>Neon-Flight</author>
+    <filecreationdate>2026-10-26</filecreationdate>
+    <description>A small twin-jet flying wing with elevons and differential thrust</description>
+  </fileheader>
+
+  <metrics>
+    <wingarea unit="M2"> 22.0 </wingarea>
+    <wingspan unit="M"> 9.0 </wingspan>
+    <chord unit="M"> 2.8 </chord>
+    <htailarea unit="M2"> 0 </htailarea>
+    <htailarm unit="M"> 0 </htailarm>
+    <vtailarea unit="M2"> 1.2 </vtailarea>
+    <vtailarm unit="M"> 2.2 </vtailarm>
+    <location name="AERORP" unit="M"> <x> 3.6 </x> <y> 0 </y> <z> 0 </z> </location>
+    <location name="EYEPOINT" unit="M"> <x> 1.9 </x> <y> 0 </y> <z> 0.35 </z> </location>
+    <location name="VRP" unit="M"> <x> 3.6 </x> <y> 0 </y> <z> 0 </z> </location>
+  </metrics>
+
+  <mass_balance>
+    <ixx unit="KG*M2"> 5500 </ixx>
+    <iyy unit="KG*M2"> 4500 </iyy>
+    <izz unit="KG*M2"> 9500 </izz>
+    <ixz unit="KG*M2"> 0 </ixz>
+    <emptywt unit="KG"> 2150 </emptywt>
+    <location name="CG" unit="M"> <x> 3.6 </x> <y> 0 </y> <z> 0 </z> </location>
+  </mass_balance>
+
+  <!-- Structure only: the wing has no landing gear yet; touching anything is a crash (the game watches these contacts). -->
+  <ground_reactions>
+    <contact type="STRUCTURE" name="NOSE">
+      <location unit="M"> <x> 0.0 </x> <y> 0 </y> <z> 0.0 </z> </location>
+      <static_friction> 0.8 </static_friction> <dynamic_friction> 0.5 </dynamic_friction>
+      <spring_coeff unit="N/M"> 200000 </spring_coeff> <damping_coeff unit="N/M/SEC"> 20000 </damping_coeff>
+    </contact>
+    <contact type="STRUCTURE" name="BELLY">
+      <location unit="M"> <x> 3.0 </x> <y> 0 </y> <z> -0.45 </z> </location>
+      <static_friction> 0.8 </static_friction> <dynamic_friction> 0.5 </dynamic_friction>
+      <spring_coeff unit="N/M"> 200000 </spring_coeff> <damping_coeff unit="N/M/SEC"> 20000 </damping_coeff>
+    </contact>
+    <contact type="STRUCTURE" name="CANOPY">
+      <location unit="M"> <x> 2.0 </x> <y> 0 </y> <z> 0.55 </z> </location>
+      <static_friction> 0.8 </static_friction> <dynamic_friction> 0.5 </dynamic_friction>
+      <spring_coeff unit="N/M"> 200000 </spring_coeff> <damping_coeff unit="N/M/SEC"> 20000 </damping_coeff>
+    </contact>
+    <contact type="STRUCTURE" name="TAIL">
+      <location unit="M"> <x> 6.4 </x> <y> 0 </y> <z> 0.0 </z> </location>
+      <static_friction> 0.8 </static_friction> <dynamic_friction> 0.5 </dynamic_friction>
+      <spring_coeff unit="N/M"> 200000 </spring_coeff> <damping_coeff unit="N/M/SEC"> 20000 </damping_coeff>
+    </contact>
+    <contact type="STRUCTURE" name="LEFT_TIP">
+      <location unit="M"> <x> 5.5 </x> <y> -4.5 </y> <z> 0.1 </z> </location>
+      <static_friction> 0.8 </static_friction> <dynamic_friction> 0.5 </dynamic_friction>
+      <spring_coeff unit="N/M"> 200000 </spring_coeff> <damping_coeff unit="N/M/SEC"> 20000 </damping_coeff>
+    </contact>
+    <contact type="STRUCTURE" name="RIGHT_TIP">
+      <location unit="M"> <x> 5.5 </x> <y> 4.5 </y> <z> 0.1 </z> </location>
+      <static_friction> 0.8 </static_friction> <dynamic_friction> 0.5 </dynamic_friction>
+      <spring_coeff unit="N/M"> 200000 </spring_coeff> <damping_coeff unit="N/M/SEC"> 20000 </damping_coeff>
+    </contact>
+    <contact type="STRUCTURE" name="LEFT_FIN">
+      <location unit="M"> <x> 6.0 </x> <y> -4.5 </y> <z> 0.9 </z> </location>
+      <static_friction> 0.8 </static_friction> <dynamic_friction> 0.5 </dynamic_friction>
+      <spring_coeff unit="N/M"> 200000 </spring_coeff> <damping_coeff unit="N/M/SEC"> 20000 </damping_coeff>
+    </contact>
+    <contact type="STRUCTURE" name="RIGHT_FIN">
+      <location unit="M"> <x> 6.0 </x> <y> 4.5 </y> <z> 0.9 </z> </location>
+      <static_friction> 0.8 </static_friction> <dynamic_friction> 0.5 </dynamic_friction>
+      <spring_coeff unit="N/M"> 200000 </spring_coeff> <damping_coeff unit="N/M/SEC"> 20000 </damping_coeff>
+    </contact>
+  </ground_reactions>
+
+  <propulsion>
+    <engine file="neonjet">
+      <feed> 0 </feed>
+      <thruster file="direct">
+        <location unit="M"> <x> 6.3 </x> <y> -0.75 </y> <z> 0 </z> </location>
+        <orient unit="DEG"> <roll> 0 </roll> <pitch> 0 </pitch> <yaw> 0 </yaw> </orient>
+      </thruster>
+    </engine>
+    <engine file="neonjet">
+      <feed> 0 </feed>
+      <thruster file="direct">
+        <location unit="M"> <x> 6.3 </x> <y> 0.75 </y> <z> 0 </z> </location>
+        <orient unit="DEG"> <roll> 0 </roll> <pitch> 0 </pitch> <yaw> 0 </yaw> </orient>
+      </thruster>
+    </engine>
+    <!-- One tank on the CG; the game keeps it topped up (free flight never runs dry). -->
+    <tank type="FUEL">
+      <location unit="M"> <x> 3.6 </x> <y> 0 </y> <z> 0 </z> </location>
+      <capacity unit="KG"> 400 </capacity>
+      <contents unit="KG"> 400 </contents>
+    </tank>
+  </propulsion>
+
+  <!--
+    FLY-BY-WIRE (the control law of a modern fighter, kept simple):
+      PITCH  stick = load factor. Centred sticks fly a straight line wherever the nose points (no trim needed at any speed or
+             attitude, inverted included); banked up to 60 deg they hold a level turn. Full back = +9 g, full forward = -3 g.
+      ROLL   stick = roll rate (up to 230 deg/s where the wing has the authority); centred holds the bank angle.
+      LIMITS angle of attack: the limiter keeps the wing out of the stall (fcs/aoa-limiter-enable = 0: off, stalls and all).
+    Gains are scheduled with dynamic pressure (pitch) and airspeed (roll), because the wing's response grows with both.
+    Each stick still moves its own elevon: left = pitch - roll, right = pitch + roll.
+  -->
+  <flight_control name="Neon Wing fly-by-wire">
+    <property value="1"> fcs/aoa-limiter-enable </property>
+    <property value="0"> fcs/stick-left-cmd </property>
+    <property value="0"> fcs/stick-right-cmd </property>
+    <property value="0.045"> fcs/gain/pitch-kp </property>
+    <property value="0.60"> fcs/gain/pitch-ki </property>
+    <property value="0.40"> fcs/gain/pitch-kq </property>
+    <property value="0.80"> fcs/gain/roll-kp </property>
+    <property value="3.0"> fcs/gain/roll-ki </property>
+    <property value="4.0"> fcs/roll-rate-max </property>
+
+    <channel name="Pilot">
+      <fcs_function name="fcs/pitch-cmd">
+        <function>
+          <product> <value> 0.5 </value>
+            <sum> <property> fcs/stick-left-cmd </property> <property> fcs/stick-right-cmd </property> </sum>
+          </product>
+        </function>
+        <clipto> <min> -1 </min> <max> 1 </max> </clipto>
+      </fcs_function>
+      <fcs_function name="fcs/roll-cmd">
+        <function>
+          <product> <value> 0.5 </value>
+            <difference> <property> fcs/stick-right-cmd </property> <property> fcs/stick-left-cmd </property> </difference>
+          </product>
+        </function>
+        <clipto> <min> -1 </min> <max> 1 </max> </clipto>
+      </fcs_function>
+    </channel>
+
+    <channel name="Pitch">
+      <!-- The load factor that keeps the flight path straight (or, banked up to 60 deg, level: a 2 g turn at 60). -->
+      <fcs_function name="fcs/bank-factor">
+        <function>
+          <ifthen>
+            <lt> <abs> <property> attitude/phi-rad </property> </abs> <value> 1.0472 </value> </lt>
+            <quotient> <value> 1 </value> <cos> <property> attitude/phi-rad </property> </cos> </quotient>
+            <ifthen>
+              <lt> <abs> <property> attitude/phi-rad </property> </abs> <value> 1.5708 </value> </lt>
+              <product> <value> 3.8197 </value>
+                <difference> <value> 1.5708 </value> <abs> <property> attitude/phi-rad </property> </abs> </difference>
+              </product>
+              <cos> <property> attitude/phi-rad </property> </cos>
+            </ifthen>
+          </ifthen>
+        </function>
+      </fcs_function>
+      <fcs_function name="fcs/nz-neutral">
+        <function>
+          <product> <cos> <property> flight-path/gamma-rad </property> </cos> <property> fcs/bank-factor </property> </product>
+        </function>
+      </fcs_function>
+      <fcs_function name="fcs/nz-demand">
+        <function>
+          <sum>
+            <property> fcs/nz-neutral </property>
+            <ifthen>
+              <gt> <property> fcs/pitch-cmd </property> <value> 0 </value> </gt>
+              <product> <property> fcs/pitch-cmd </property> <difference> <value> 9 </value> <property> fcs/nz-neutral </property> </difference> </product>
+              <product> <property> fcs/pitch-cmd </property> <sum> <value> 3 </value> <property> fcs/nz-neutral </property> </sum> </product>
+            </ifthen>
+          </sum>
+        </function>
+      </fcs_function>
+      <!-- g onset is limited (40 g/s), as in a real fly-by-wire: a snatched stick does not overshoot the 9 g limit. -->
+      <actuator name="fcs/nz-demand-shaped">
+        <input> fcs/nz-demand </input>
+        <rate_limit> 40 </rate_limit>
+      </actuator>
+      <!-- Angle-of-attack limiter: from 14 deg (positive) and -12 deg (negative) the demand is pulled back hard. -->
+      <fcs_function name="fcs/nz-cmd">
+        <function>
+          <difference>
+            <property> fcs/nz-demand-shaped </property>
+            <product> <value> 40 </value> <property> fcs/aoa-limiter-enable </property>
+              <difference>
+                <max> <value> 0 </value> <difference> <property> aero/alpha-rad </property> <value> 0.245 </value> </difference> </max>
+                <max> <value> 0 </value> <difference> <value> -0.21 </value> <property> aero/alpha-rad </property> </difference> </max>
+              </difference>
+            </product>
+          </difference>
+        </function>
+      </fcs_function>
+      <fcs_function name="fcs/nz-error">
+        <function> <difference> <property> fcs/nz-cmd </property> <property> accelerations/Nz </property> </difference> </function>
+      </fcs_function>
+      <!-- The wing's g per unit elevon grows with dynamic pressure: gains scale with 288 psf (150 m/s at sea level) / qbar. -->
+      <fcs_function name="fcs/pitch-sched">
+        <function>
+          <quotient> <value> 288 </value> <max> <property> aero/qbar-psf </property> <value> 30 </value> </max> </quotient>
+        </function>
+      </fcs_function>
+      <fcs_function name="fcs/pitch-kp-eff">
+        <function> <product> <property> fcs/gain/pitch-kp </property> <property> fcs/pitch-sched </property> </product> </function>
+      </fcs_function>
+      <fcs_function name="fcs/pitch-ki-eff">
+        <function> <product> <property> fcs/gain/pitch-ki </property> <property> fcs/pitch-sched </property> </product> </function>
+      </fcs_function>
+      <!-- Anti-windup: stop integrating while the elevons are already at their limit in the direction asked. -->
+      <fcs_function name="fcs/pitch-windup">
+        <function>
+          <ifthen>
+            <gt> <product> <property> fcs/pitch-pid </property> <property> fcs/nz-error </property> </product> <value> 0 </value> </gt>
+            <ifthen> <gt> <abs> <property> fcs/pitch-pid </property> </abs> <value> 0.98 </value> </gt> <value> 1 </value> <value> 0 </value> </ifthen>
+            <value> 0 </value>
+          </ifthen>
+        </function>
+      </fcs_function>
+      <pid name="fcs/pitch-pid">
+        <input> fcs/nz-error </input>
+        <kp> fcs/pitch-kp-eff </kp>
+        <ki type="trap"> fcs/pitch-ki-eff </ki>
+        <trigger> fcs/pitch-windup </trigger>
+        <clipto> <min> -1 </min> <max> 1 </max> </clipto>
+      </pid>
+      <fcs_function name="fcs/pitch-damper">
+        <function>
+          <product> <value> -1 </value> <property> fcs/gain/pitch-kq </property> <property> fcs/pitch-sched </property>
+            <property> velocities/q-aero-rad_sec </property> </product>
+        </function>
+      </fcs_function>
+      <summer name="fcs/pitch-sum">
+        <input> fcs/pitch-pid </input>
+        <input> fcs/pitch-damper </input>
+        <clipto> <min> -1 </min> <max> 1 </max> </clipto>
+      </summer>
+    </channel>
+
+    <channel name="Roll">
+      <fcs_function name="fcs/p-cmd">
+        <function> <product> <property> fcs/roll-cmd </property> <property> fcs/roll-rate-max </property> </product> </function>
+      </fcs_function>
+      <fcs_function name="fcs/p-error">
+        <function> <difference> <property> fcs/p-cmd </property> <property> velocities/p-aero-rad_sec </property> </difference> </function>
+      </fcs_function>
+      <!-- Roll rate per unit elevon grows with airspeed: gains scale with 492 ft/s (150 m/s) / TAS. -->
+      <fcs_function name="fcs/roll-sched">
+        <function>
+          <quotient> <value> 492 </value> <max> <property> velocities/vt-fps </property> <value> 150 </value> </max> </quotient>
+        </function>
+      </fcs_function>
+      <fcs_function name="fcs/roll-kp-eff">
+        <function> <product> <property> fcs/gain/roll-kp </property> <property> fcs/roll-sched </property> </product> </function>
+      </fcs_function>
+      <fcs_function name="fcs/roll-ki-eff">
+        <function> <product> <property> fcs/gain/roll-ki </property> <property> fcs/roll-sched </property> </product> </function>
+      </fcs_function>
+      <fcs_function name="fcs/roll-windup">
+        <function>
+          <ifthen>
+            <gt> <product> <property> fcs/roll-pid </property> <property> fcs/p-error </property> </product> <value> 0 </value> </gt>
+            <ifthen> <gt> <abs> <property> fcs/roll-pid </property> </abs> <value> 0.98 </value> </gt> <value> 1 </value> <value> 0 </value> </ifthen>
+            <value> 0 </value>
+          </ifthen>
+        </function>
+      </fcs_function>
+      <pid name="fcs/roll-pid">
+        <input> fcs/p-error </input>
+        <kp> fcs/roll-kp-eff </kp>
+        <ki type="trap"> fcs/roll-ki-eff </ki>
+        <trigger> fcs/roll-windup </trigger>
+        <clipto> <min> -1 </min> <max> 1 </max> </clipto>
+      </pid>
+    </channel>
+
+    <channel name="Elevons">
+      <!-- Positive = trailing edge UP. Left = pitch - roll, right = pitch + roll. -->
+      <summer name="fcs/elevon-left-cmd">
+        <input> fcs/pitch-sum </input>
+        <input> -fcs/roll-pid </input>
+        <clipto> <min> -1 </min> <max> 1 </max> </clipto>
+      </summer>
+      <summer name="fcs/elevon-right-cmd">
+        <input> fcs/pitch-sum </input>
+        <input> fcs/roll-pid </input>
+        <clipto> <min> -1 </min> <max> 1 </max> </clipto>
+      </summer>
+      <actuator name="fcs/elevon-left-pos-norm">
+        <input> fcs/elevon-left-cmd </input>
+        <rate_limit> 6.0 </rate_limit>
+        <clipto> <min> -1 </min> <max> 1 </max> </clipto>
+      </actuator>
+      <actuator name="fcs/elevon-right-pos-norm">
+        <input> fcs/elevon-right-cmd </input>
+        <rate_limit> 6.0 </rate_limit>
+        <clipto> <min> -1 </min> <max> 1 </max> </clipto>
+      </actuator>
+      <!-- +-20 degrees. -->
+      <pure_gain name="fcs/elevon-left-pos-rad">
+        <input> fcs/elevon-left-pos-norm </input>
+        <gain> 0.349 </gain>
+      </pure_gain>
+      <pure_gain name="fcs/elevon-right-pos-rad">
+        <input> fcs/elevon-right-pos-norm </input>
+        <gain> 0.349 </gain>
+      </pure_gain>
+      <fcs_function name="fcs/elevon-sym-rad">
+        <function>
+          <product> <value> 0.5 </value>
+            <sum> <property> fcs/elevon-left-pos-rad </property> <property> fcs/elevon-right-pos-rad </property> </sum>
+          </product>
+        </function>
+      </fcs_function>
+      <!-- Positive = rolls right (right trailing edge up, left down). -->
+      <fcs_function name="fcs/elevon-diff-rad">
+        <function>
+          <product> <value> 0.5 </value>
+            <difference> <property> fcs/elevon-right-pos-rad </property> <property> fcs/elevon-left-pos-rad </property> </difference>
+          </product>
+        </function>
+      </fcs_function>
+      <fcs_function name="fcs/elevon-mag-rad">
+        <function>
+          <product> <value> 0.5 </value>
+            <sum> <abs> <property> fcs/elevon-left-pos-rad </property> </abs> <abs> <property> fcs/elevon-right-pos-rad </property> </abs> </sum>
+          </product>
+        </function>
+      </fcs_function>
+    </channel>
+
+    <channel name="Throttles">
+      <pure_gain name="fcs/throttle-pos-norm[0]">
+        <input> fcs/throttle-cmd-norm[0] </input>
+        <gain> 1 </gain>
+        <clipto> <min> 0 </min> <max> 1 </max> </clipto>
+        <output> fcs/throttle-pos-norm[0] </output>
+      </pure_gain>
+      <pure_gain name="fcs/throttle-pos-norm[1]">
+        <input> fcs/throttle-cmd-norm[1] </input>
+        <gain> 1 </gain>
+        <clipto> <min> 0 </min> <max> 1 </max> </clipto>
+        <output> fcs/throttle-pos-norm[1] </output>
+      </pure_gain>
+    </channel>
+  </flight_control>
+
+  <aerodynamics>
+    <axis name="LIFT">
+      <function name="aero/coefficient/CLalpha">
+        <description>Lift due to alpha: CL-alpha 3.75 per rad, CLmax 1.0 at 18 deg, a gentle stall</description>
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <table>
+            <independentVar> aero/alpha-rad </independentVar>
+            <tableData>
+              -1.57   0.00
+              -0.70  -0.40
+              -0.40  -0.62
+              -0.27  -0.88
+              -0.20  -0.73
+               0.00   0.02
+               0.22   0.845
+               0.28   0.98
+               0.32   1.00
+               0.38   0.86
+               0.50   0.78
+               0.80   0.70
+               1.10   0.42
+               1.57   0.00
+            </tableData>
+          </table>
+        </product>
+      </function>
+      <function name="aero/coefficient/CLde">
+        <description>Lift due to elevons (trailing edge up loses lift)</description>
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <property> fcs/elevon-sym-rad </property>
+          <value> -0.25 </value>
+        </product>
+      </function>
+      <function name="aero/coefficient/CLq">
+        <description>Lift due to pitch rate</description>
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <property> aero/ci2vel </property>
+          <property> velocities/q-aero-rad_sec </property>
+          <value> 1.5 </value>
+        </product>
+      </function>
+    </axis>
+
+    <axis name="DRAG">
+      <function name="aero/coefficient/CD0">
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <value> 0.016 </value>
+        </product>
+      </function>
+      <function name="aero/coefficient/CDi">
+        <description>Induced drag, K = 1/(pi e AR) with AR 3.7, e 0.85</description>
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <property> aero/cl-squared </property>
+          <value> 0.10 </value>
+        </product>
+      </function>
+      <function name="aero/coefficient/CDalpha">
+        <description>Separated-flow drag past the stall (a flat plate at 90 deg)</description>
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <table>
+            <independentVar> aero/alpha-rad </independentVar>
+            <tableData>
+              -1.57   1.30
+              -0.80   0.90
+              -0.50   0.35
+              -0.30   0.00
+               0.30   0.00
+               0.50   0.35
+               0.80   0.90
+               1.57   1.30
+            </tableData>
+          </table>
+        </product>
+      </function>
+      <function name="aero/coefficient/CDmach">
+        <description>Wave drag</description>
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <table>
+            <independentVar> velocities/mach </independentVar>
+            <tableData>
+              0.00   0.000
+              0.80   0.000
+              0.88   0.010
+              0.95   0.035
+              1.05   0.060
+              1.30   0.050
+              2.00   0.040
+            </tableData>
+          </table>
+        </product>
+      </function>
+      <function name="aero/coefficient/CDbeta">
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <table>
+            <independentVar> aero/beta-rad </independentVar>
+            <tableData>
+              -1.57   1.00
+              -0.26   0.04
+               0.00   0.00
+               0.26   0.04
+               1.57   1.00
+            </tableData>
+          </table>
+        </product>
+      </function>
+      <function name="aero/coefficient/CDde">
+        <description>Drag of deflected elevons</description>
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <property> fcs/elevon-mag-rad </property>
+          <value> 0.04 </value>
+        </product>
+      </function>
+    </axis>
+
+    <axis name="SIDE">
+      <function name="aero/coefficient/CYb">
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <property> aero/beta-rad </property>
+          <value> -0.45 </value>
+        </product>
+      </function>
+    </axis>
+
+    <axis name="ROLL">
+      <function name="aero/coefficient/Clb">
+        <description>Dihedral effect of the swept wing, stronger with lift</description>
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <property> metrics/bw-ft </property>
+          <property> aero/beta-rad </property>
+          <table>
+            <independentVar> aero/alpha-rad </independentVar>
+            <tableData>
+              0.00   -0.05
+              0.30   -0.12
+            </tableData>
+          </table>
+        </product>
+      </function>
+      <function name="aero/coefficient/Clp">
+        <description>Roll damping; it fades through the stall (a stalled wing wants to autorotate)</description>
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <property> metrics/bw-ft </property>
+          <property> aero/bi2vel </property>
+          <property> velocities/p-aero-rad_sec </property>
+          <table>
+            <independentVar> aero/alpha-rad </independentVar>
+            <tableData>
+              -0.40  -0.25
+              -0.28  -0.40
+               0.28  -0.40
+               0.32  -0.25
+               0.38  -0.02
+               0.50   0.03
+               0.80  -0.05
+            </tableData>
+          </table>
+        </product>
+      </function>
+      <function name="aero/coefficient/Clr">
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <property> metrics/bw-ft </property>
+          <property> aero/bi2vel </property>
+          <property> velocities/r-aero-rad_sec </property>
+          <table>
+            <independentVar> aero/alpha-rad </independentVar>
+            <tableData>
+              0.00   0.02
+              0.30   0.12
+            </tableData>
+          </table>
+        </product>
+      </function>
+      <function name="aero/coefficient/Clda">
+        <description>Roll due to differential elevons (weaker in the stall)</description>
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <property> metrics/bw-ft </property>
+          <property> fcs/elevon-diff-rad </property>
+          <table>
+            <independentVar> aero/alpha-rad </independentVar>
+            <tableData>
+              0.30   0.12
+              0.50   0.06
+            </tableData>
+          </table>
+        </product>
+      </function>
+    </axis>
+
+    <axis name="PITCH">
+      <function name="aero/coefficient/Cm0">
+        <description>Reflexed section: trims at about 2 deg with the elevons neutral</description>
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <property> metrics/cbarw-ft </property>
+          <value> 0.01 </value>
+        </product>
+      </function>
+      <function name="aero/coefficient/Cmalpha">
+        <description>Static stability (static margin about 8 percent), stronger nose-down deep in the stall</description>
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <property> metrics/cbarw-ft </property>
+          <table>
+            <independentVar> aero/alpha-rad </independentVar>
+            <tableData>
+              -1.57   0.60
+              -0.40   0.12
+               0.00   0.00
+               0.40  -0.12
+               1.57  -0.60
+            </tableData>
+          </table>
+        </product>
+      </function>
+      <function name="aero/coefficient/Cmq">
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <property> metrics/cbarw-ft </property>
+          <property> aero/ci2vel </property>
+          <property> velocities/q-aero-rad_sec </property>
+          <value> -1.8 </value>
+        </product>
+      </function>
+      <function name="aero/coefficient/Cmadot">
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <property> metrics/cbarw-ft </property>
+          <property> aero/ci2vel </property>
+          <property> aero/alphadot-rad_sec </property>
+          <value> -0.6 </value>
+        </product>
+      </function>
+      <function name="aero/coefficient/Cmde">
+        <description>Pitch due to elevons (trailing edge up = nose up)</description>
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <property> metrics/cbarw-ft </property>
+          <property> fcs/elevon-sym-rad </property>
+          <value> 0.30 </value>
+        </product>
+      </function>
+    </axis>
+
+    <axis name="YAW">
+      <function name="aero/coefficient/Cnb">
+        <description>Weathercock stability of the winglets (weak: a flying wing)</description>
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <property> metrics/bw-ft </property>
+          <property> aero/beta-rad </property>
+          <value> 0.10 </value>
+        </product>
+      </function>
+      <function name="aero/coefficient/Cnr">
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <property> metrics/bw-ft </property>
+          <property> aero/bi2vel </property>
+          <property> velocities/r-aero-rad_sec </property>
+          <value> -0.25 </value>
+        </product>
+      </function>
+      <function name="aero/coefficient/Cnp">
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <property> metrics/bw-ft </property>
+          <property> aero/bi2vel </property>
+          <property> velocities/p-aero-rad_sec </property>
+          <value> -0.03 </value>
+        </product>
+      </function>
+      <function name="aero/coefficient/Cnda">
+        <description>Adverse yaw of the elevons</description>
+        <product>
+          <property> aero/qbar-psf </property>
+          <property> metrics/Sw-sqft </property>
+          <property> metrics/bw-ft </property>
+          <property> fcs/elevon-diff-rad </property>
+          <value> -0.012 </value>
+        </product>
+      </function>
+    </axis>
+  </aerodynamics>
+</fdm_config>
