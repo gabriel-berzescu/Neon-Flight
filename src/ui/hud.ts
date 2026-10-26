@@ -192,9 +192,9 @@ export class Hud {
     else if (s.crashed) this.html(this.center, 'center', `<div class="big">crashed</div><div class="sub">new flight in ${Math.max(1, Math.ceil(opts.respawnIn))}</div>`);
     else this.html(this.center, 'center', '');
 
-    // the controls card: shown on the first flight until the pilot has flown a while
+    // the controls card: shown at the start until the pilot has been flying for a while (real time, crashes included)
     if (!this.cardGone) {
-      if (c.active || s.time > 2) this.cardTimer += dt;
+      if (c.active || this.cardTimer > 0 || s.time > 2) this.cardTimer += dt;
       if (this.cardTimer > 9) {
         this.cardGone = true;
         this.card.style.opacity = '0';
