@@ -98,6 +98,8 @@ export class Hud {
   private readonly v = new THREE.Vector3();
   private last: Record<string, string> = {};
   private cardTimer = 0;
+  private flashText = '';
+  private flashLeft = 0;
   private cardGone = false;
 
   constructor(parent: HTMLElement) {
@@ -142,6 +144,12 @@ export class Hud {
     );
     this.hint = el('div', 'hint', this.root);
     this.dev = el('div', 'dev', this.root);
+  }
+
+  /** A short notice in the top-right corner for a few seconds. */
+  flash(text: string, seconds = 4): void {
+    this.flashText = text;
+    this.flashLeft = seconds;
   }
 
   private text(e: HTMLElement, key: string, s: string): void {
@@ -204,6 +212,7 @@ export class Hud {
     const dev =
       c.device === 'gamepad' ? (c.padName ?? 'gamepad') : c.device === 'keyboard' ? 'keyboard' : 'no controller: press a button on the pad';
     this.text(this.dev, 'dev', dev);
-    this.text(this.hint, 'hint', opts.soundLocked ? 'click or press a key for sound' : '');
+    this.flashLeft = Math.max(0, this.flashLeft - dt);
+    this.text(this.hint, 'hint', this.flashLeft > 0 ? this.flashText : opts.soundLocked ? 'click or press a key for sound' : '');
   }
 }

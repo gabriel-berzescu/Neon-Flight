@@ -21,6 +21,19 @@ export interface StageOptions {
   bloom?: boolean;
 }
 
+/**
+ * Quality levels, cheapest first. `ratio` caps the render resolution (device pixels per CSS pixel; the browser scales the canvas
+ * up), `samples` is the MSAA of the scene buffer, `bloom` the glow pass. The terrain and the neon lines are anti-aliased in their
+ * shaders, so the low levels stay clean; they cost a fraction of `high`'s pixels (a weak integrated GPU holds 60 fps there).
+ */
+export const QUALITY = [
+  { name: 'lowest', ratio: 0.6, samples: 0, bloom: false },
+  { name: 'low', ratio: 0.8, samples: 0, bloom: true },
+  { name: 'medium', ratio: 1.0, samples: 2, bloom: true },
+  { name: 'high', ratio: 1.5, samples: 4, bloom: true },
+] as const;
+export const QUALITY_HIGH = QUALITY.length - 1;
+
 export class Stage {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -28,10 +41,12 @@ export class Stage {
   readonly composer: EffectComposer;
   readonly bloom: UnrealBloomPass;
   private readonly maxPixelRatio: number;
+  private level: number = QUALITY_HIGH;
 
   constructor(readonly canvas: HTMLCanvasElement, opts: StageOptions = {}) {
     this.maxPixelRatio = opts.maxPixelRatio ?? 1.5;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    // (no antialias on the canvas itself: the scene renders into the composer's MSAA buffer, the canvas only gets the result)
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.maxPixelRatio));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
@@ -53,10 +68,30 @@ export class Stage {
     window.addEventListener('resize', () => this.resize());
   }
 
+  /** The quality level in force (an index into QUALITY). */
+  get quality(): number {
+    return this.level;
+  }
+
+  set quality(level: number) {
+    const l = Math.max(0, Math.min(QUALITY_HIGH, Math.round(level)));
+    if (l === this.level) return;
+    this.level = l;
+    const q = QUALITY[l];
+    for (const t of [this.composer.renderTarget1, this.composer.renderTarget2]) {
+      if (t.samples !== q.samples) {
+        t.samples = q.samples;
+        t.dispose(); // (re-created with the new sample count on its next use)
+      }
+    }
+    this.bloom.enabled = q.bloom;
+    this.resize();
+  }
+
   resize(): void {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
-    const pr = Math.min(window.devicePixelRatio, this.maxPixelRatio);
+    const pr = Math.min(window.devicePixelRatio, this.maxPixelRatio, QUALITY[this.level].ratio);
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h, false);
     this.composer.setPixelRatio(pr);

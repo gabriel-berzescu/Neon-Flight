@@ -6,6 +6,16 @@ WebAssembly and running in the browser.
 
 **Play:** https://gabriel-berzescu.github.io/Neon-Flight/ (Chrome or Edge; a Logitech F310 in X mode, or any XInput pad).
 
+**Smoothest on Windows: `play.bat`** (needs [Node.js](https://nodejs.org)). Double-click it in a copy of this repository: it
+builds the game if needed, serves it locally and opens it fullscreen in its own Chrome window on the fast GPU, with sound on
+from the start; closing the window stops it. On a laptop with two GPUs, a browser tab usually runs on the slower integrated
+one: measured on an RTX 3050 laptop, the game holds 144 fps on the NVIDIA GPU, against 30 fps on the Intel one at full quality.
+
+The web version adapts to the GPU it gets: on an integrated GPU it starts at lower quality (render resolution, anti-aliasing,
+glow), and it steps down further while the frame rate drops below 50 fps or hitches, remembering the level for that GPU.
+`?q=lowest`, `low`, `medium` or `high` on the URL fixes a level. To give a browser the fast GPU for good, in Windows: Settings,
+System, Display, Graphics, then set Chrome to High performance.
+
 ## Controls
 
 Four controls, nothing else. Each stick moves one wing, each trigger is one engine.

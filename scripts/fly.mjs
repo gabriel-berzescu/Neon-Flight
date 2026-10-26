@@ -3,6 +3,10 @@
  * Scripted flight in headless Chrome (GPU) with a fake F310, for QA: screenshots and state at given times.
  *
  *   node scripts/fly.mjs [path] --plan "<steps>" [--port 5240] [--out shots/fly] [--w 1600] [--h 900] [--log]
+ *                        [--gpu high|default] [--uncapped]
+ *
+ * --gpu default leaves the GPU choice to Windows (what a plain browser tab gets: on this laptop the Intel one); --uncapped turns
+ * vsync and the frame-rate limit off, so the fps line measures what the machine can do.
  *
  * path defaults to index.html. Steps are `time:action` separated by `;` (time in seconds after the game is ready), actions
  * separated by `,`:
@@ -11,6 +15,7 @@
  *   start=1 / start=0      the Start button
  *   shot=name              screenshot to <out>/<name>.png
  *   state                  print the flight state (speed, altitude, g, attitude, crashed)
+ *   perf                   time every frame for 5 s: fps, frame-time percentiles, and how fast game time runs vs real time
  *   eval=<js>              evaluate in the page and print the result (no commas inside: use a separate step)
  * Example: --plan "0:lt=0.8,rt=0.8;1:shot=start;2:ly=0.5,ry=0.5;3:state,shot=pull;3.2:ly=0,ry=0"
  *
@@ -23,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
-const valued = new Set(['plan', 'port', 'out', 'w', 'h']);
+const valued = new Set(['plan', 'port', 'out', 'w', 'h', 'gpu', 'dpr']);
 const opts = {};
 const pos = [];
 for (let i = 0; i < argv.length; i++) {
@@ -53,9 +58,13 @@ const steps = String(opts.plan ?? '0:state,shot=start')
 const browser = await launchChrome({
   channel: 'chrome',
   headless: true,
-  args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist', '--force_high_performance_gpu', '--autoplay-policy=no-user-gesture-required'],
+  args: [
+    '--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required',
+    ...(opts.gpu === 'default' ? [] : ['--force_high_performance_gpu']),
+    ...(opts.uncapped ? ['--disable-gpu-vsync', '--disable-frame-rate-limit'] : []),
+  ],
 });
-const page = await browser.newPage({ viewport: { width: +(opts.w ?? 1600), height: +(opts.h ?? 900) } });
+const page = await browser.newPage({ viewport: { width: +(opts.w ?? 1600), height: +(opts.h ?? 900) }, deviceScaleFactor: +(opts.dpr ?? 1) });
 await page.addInitScript({ content: readFileSync(join(ROOT, 'scripts', 'fixtures', 'fake-pad.js'), 'utf8') });
 let threw = false;
 page.on('console', (m) => {
@@ -92,6 +101,29 @@ for (const step of steps) {
       const file = join(outDir, `${v}.png`);
       await page.screenshot({ path: file });
       console.log(`[shot ${step.t}s] ${file}`);
+    } else if (k === 'perf') {
+      const r = await page.evaluate(
+        () =>
+          new Promise((res) => {
+            const f = window.__nf.flight;
+            const d = [];
+            const t0 = performance.now();
+            const g0 = f.state.time;
+            let last = t0;
+            const tick = (now) => {
+              d.push(now - last);
+              last = now;
+              if (now - t0 < 5000) requestAnimationFrame(tick);
+              else {
+                d.sort((a, b) => a - b);
+                const q = (p) => +d[Math.min(d.length - 1, Math.floor(p * d.length))].toFixed(1);
+                res({ fps: Math.round((d.length * 1000) / (now - t0)), p50: q(0.5), p95: q(0.95), p99: q(0.99), max: +d[d.length - 1].toFixed(1), over50ms: d.filter((x) => x > 50).length, gameSpeed: +((f.state.time - g0) / ((now - t0) / 1000)).toFixed(2), canvas: [window.__nf.stage.renderer.domElement.width, window.__nf.stage.renderer.domElement.height] });
+              }
+            };
+            requestAnimationFrame(tick);
+          }),
+      );
+      console.log(`[perf ${step.t}s]`, JSON.stringify(r));
     } else if (k === 'state') {
       console.log(`[state ${step.t}s]`, JSON.stringify(await state()));
     } else if (k === 'eval') {
@@ -108,6 +140,11 @@ const fps = await page.evaluate(
       requestAnimationFrame(f);
     }),
 );
-console.log(`[fly] done, ~${fps} fps (headless, vsync-capped)`);
+const gl = await page.evaluate(() => {
+  const c = document.createElement('canvas').getContext('webgl2');
+  const d = c && c.getExtension('WEBGL_debug_renderer_info');
+  return d ? c.getParameter(d.UNMASKED_RENDERER_WEBGL) : 'unknown';
+});
+console.log(`[fly] done, ~${fps} fps (headless${opts.uncapped ? ', uncapped' : ', vsync-capped'}), GPU: ${gl}`);
 await browser.close();
 process.exit(threw ? 1 : 0);

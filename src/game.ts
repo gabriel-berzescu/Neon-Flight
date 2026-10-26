@@ -14,7 +14,8 @@ import { AircraftView } from './render/aircraft';
 import { Burst } from './render/burst';
 import { ChaseCamera } from './render/chase-camera';
 import { PALETTE } from './render/palette';
-import { Stage } from './render/stage';
+import { QUALITY, Stage } from './render/stage';
+import { QualityGovernor } from './render/quality';
 import { Hud } from './ui/hud';
 import { Sound } from './audio/sound';
 
@@ -44,6 +45,7 @@ export class Game {
   readonly burst = new Burst();
   readonly hud: Hud;
   readonly sound = new Sound();
+  readonly quality: QualityGovernor;
   flight!: Flight;
   private chase!: ChaseCamera;
   private paused = false;
@@ -57,6 +59,11 @@ export class Game {
 
   constructor(canvas: HTMLCanvasElement, ui: HTMLElement, readonly world: World) {
     this.stage = new Stage(canvas);
+    // ?q=0..3 (or lowest/low/medium/high) fixes the quality level, for testing
+    const q = new URLSearchParams(location.search).get('q');
+    if (q !== null) this.stage.quality = /^\d$/.test(q) ? +q : QUALITY.findIndex((l) => l.name === q);
+    this.quality = new QualityGovernor(this.stage, q !== null);
+    this.quality.onChange = (name) => this.hud.flash(`graphics: ${name}, for a smooth frame rate`);
     this.hud = new Hud(ui);
     const scene = this.stage.scene;
     for (const v of world.views) scene.add(v.object);
@@ -110,6 +117,7 @@ export class Game {
   /** One frame of game time (public so QA scripts can drive it). */
   step(dt: number): void {
     const c = this.controls.poll(dt);
+    this.quality.frame(dt, !this.paused && !this.flight.state.crashed);
     if (c.pause) this.paused = !this.paused;
     const f = this.flight;
     if (!this.paused) {
