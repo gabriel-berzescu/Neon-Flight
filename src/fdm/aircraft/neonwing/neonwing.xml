@@ -118,7 +118,7 @@
     FLY-BY-WIRE (the control law of a modern fighter, kept simple):
       PITCH  stick = load factor. Centred sticks fly a straight line wherever the nose points (no trim needed at any speed or
              attitude, inverted included); banked up to 60 deg they hold a level turn. Full back = +9 g, full forward = -3 g.
-      ROLL   stick = roll rate (up to 230 deg/s where the wing has the authority); centred holds the bank angle.
+      ROLL   stick = roll rate (up to 150 deg/s); centred holds the bank angle.
       LIMITS angle of attack: the limiter keeps the wing out of the stall (fcs/aoa-limiter-enable = 0: off, stalls and all).
     Gains are scheduled with dynamic pressure (pitch) and airspeed (roll), because the wing's response grows with both.
     Each stick still moves its own elevon: left = pitch - roll, right = pitch + roll.
@@ -132,7 +132,7 @@
     <property value="0.40"> fcs/gain/pitch-kq </property>
     <property value="0.80"> fcs/gain/roll-kp </property>
     <property value="3.0"> fcs/gain/roll-ki </property>
-    <property value="4.0"> fcs/roll-rate-max </property>
+    <property value="2.6"> fcs/roll-rate-max </property>
 
     <channel name="Pilot">
       <fcs_function name="fcs/pitch-cmd">

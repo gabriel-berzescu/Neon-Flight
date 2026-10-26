@@ -47,7 +47,7 @@ export interface PadLike {
 
 export const STICK_DEADZONE = 0.08;
 /** 0 = linear, 1 = cubic. */
-export const STICK_EXPO = 0.35;
+export const STICK_EXPO = 0.5;
 export const TRIGGER_DEADZONE = 0.02;
 
 /** F310 standard mapping indices. */

@@ -52,8 +52,8 @@ const SPAWN_SPEED = 150;
 /** Engines hold this until the player first touches a trigger (so the help card can be read in flight). */
 const SPAWN_ENGINES = 0.55;
 const RESPAWN_DELAY = 3.5;
-const RUN_SPEED = 170;
-const RUN_ENGINES = 0.62;
+const RUN_SPEED = 150;
+const RUN_ENGINES = 0.5;
 const COUNTDOWN = 3.5;
 /** Seconds between the end of a run and its results card (time to see the crash, or to fly out of the canyon). */
 const RESULTS_DELAY = { crashed: 2.2, finished: 1.6 };

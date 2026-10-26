@@ -75,7 +75,7 @@ describe('canyon field: the canyon carved into the terrain', () => {
           for (let d = 0; d <= h0 + w; d += 1) {
             const [x, z] = at(c, i, side * d);
             const g = groundAt(x, z);
-            expect(g).toBeGreaterThanOrEqual(prev - 1e-4); // the wall only rises (the floor is flat to float32 rounding)
+            expect(g).toBeGreaterThanOrEqual(prev - 1e-3); // the wall only rises (the floor is flat to a millimetre: float32 field)
             prev = g;
           }
           // the foot of the wall is the floor, the wall is half way up halfway across, the lip is a little rounded
@@ -93,7 +93,7 @@ describe('canyon field: the canyon carved into the terrain', () => {
             expect(groundAt(x, z)).toBeGreaterThan(c.rim[i] - (d < 150 ? 1 : 12));
           }
           const [fx, fz] = at(c, i, side * 700);
-          expect(groundAt(fx, fz)).toBeGreaterThanOrEqual(baseHeightAt(fx, fz) - 1e-6);
+          expect(groundAt(fx, fz)).toBeGreaterThanOrEqual(baseHeightAt(fx, fz) - 1e-3) // (float32 field: within a millimetre);
         }
       }
     });
@@ -109,7 +109,7 @@ describe('canyon field: the canyon carved into the terrain', () => {
         cut++;
         expect(groundAt(c.x[i], c.z[i])).toBeCloseTo(c.floor[i], 2);
         const [x, z] = at(c, i, 500);
-        expect(groundAt(x, z)).toBeGreaterThanOrEqual(baseHeightAt(x, z) - 1e-6);
+        expect(groundAt(x, z)).toBeGreaterThanOrEqual(baseHeightAt(x, z) - 1e-3);
       }
     }
     expect(cut).toBeGreaterThan(20);

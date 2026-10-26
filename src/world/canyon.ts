@@ -120,9 +120,9 @@ export function generateCanyon(seed: number, base: (x: number, z: number) => num
   const z0 = opts.at?.z ?? -Math.cos(ang) * dist;
   let heading = ((opts.heading ?? r() * 360) * Math.PI) / 180;
 
-  // curvature: three slow waves, together never tighter than a 1500 m radius (a 64 deg, 2.3 g turn at the run's 175 m/s: a
-  // pilot can follow every bend; tighter made the canyon a fight); straight for the first 500 m
-  const KMAX = 1 / 1500;
+  // curvature: three slow waves, together never tighter than an 1800 m radius (about a 2 g turn at 175 m/s, easier at the
+  // run's 150: every bend can be followed; 900 m made the canyon a fight); straight for the first 500 m
+  const KMAX = 1 / 1800;
   const waves = [0, 1, 2].map(() => ({ len: 1400 + r() * 2600, phase: r() * Math.PI * 2, w: 0.5 + r() }));
   const wsum = waves.reduce((a, w) => a + w.w, 0);
   // widths and depths: slow waves too; the canyon narrows as the run goes on
@@ -151,7 +151,7 @@ export function generateCanyon(seed: number, base: (x: number, z: number) => num
     tz[i] = dz;
     const progress = s / CANYON_LENGTH;
     const wide = 0.5 + 0.5 * Math.sin((2 * Math.PI * s) / wHalf.len + wHalf.phase);
-    half[i] = 34 + (46 - 18 * progress) * wide; // 34-80 m early, 34-62 m late
+    half[i] = 55 + (55 - 25 * progress) * wide; // 55-110 m early, 55-85 m late
     depth[i] = 200 + 45 * Math.sin((2 * Math.PI * s) / wDepth.len + wDepth.phase);
     wall[i] = 40 + 18 * (0.5 + 0.5 * Math.sin((2 * Math.PI * s) / wWall.len + wWall.phase));
   }
@@ -191,11 +191,11 @@ export function generateCanyon(seed: number, base: (x: number, z: number) => num
   for (let s = 800 + r() * 150; s <= lastS; s += 500 + r() * 150) {
     const i = Math.round(s / CANYON_STEP);
     const progress = s / lastS;
-    const width = 50 - 16 * progress;
-    const height = 36 - 11 * progress;
+    const width = 56 - 14 * progress;
+    const height = 40 - 10 * progress;
     const reach = 0.25 + 0.75 * progress;
     const lateralRoom = Math.max(0, half[i] - width / 2 - 8);
-    const lateral = (r() * 2 - 1) * lateralRoom * reach;
+    const lateral = (r() * 2 - 1) * Math.min(lateralRoom, 40) * reach;
     const d = rim[i] - floor[i];
     const lift = 22 + r() * Math.max(0, (d - height - 70) * reach);
     gates.push({

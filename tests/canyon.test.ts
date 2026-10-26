@@ -13,13 +13,13 @@ describe('canyon layout', () => {
     expect(Math.hypot(other.x[0] - c.x[0], other.z[0] - c.z[0])).toBeGreaterThan(1000);
   });
 
-  it('is a continuous centreline of unit tangents, never tighter than a 1500 m radius', () => {
+  it('is a continuous centreline of unit tangents, never tighter than an 1800 m radius', () => {
     expect(c.n).toBe(CANYON_LENGTH / CANYON_STEP + 1);
     for (let i = 1; i < c.n; i++) {
       expect(Math.hypot(c.x[i] - c.x[i - 1], c.z[i] - c.z[i - 1])).toBeCloseTo(CANYON_STEP, 6);
       expect(Math.hypot(c.tx[i], c.tz[i])).toBeCloseTo(1, 9);
       const turn = Math.acos(Math.min(1, c.tx[i] * c.tx[i - 1] + c.tz[i] * c.tz[i - 1]));
-      expect(turn / CANYON_STEP).toBeLessThan(1 / 1499);
+      expect(turn / CANYON_STEP).toBeLessThan(1 / 1799);
     }
   });
 
