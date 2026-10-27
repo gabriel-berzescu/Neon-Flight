@@ -1,7 +1,7 @@
 /**
  * The HUD: a few neon readouts over the 3D view (DOM, no canvas).
  *
- *   bottom left / right   each side's engine (thrust bar, trigger tick) and its elevon (the stick that moves it)
+ *   bottom left / right   each side's engine (thrust bar, power setting tick) and its elevon (the stick that moves it)
  *   bottom centre         airspeed (km/h), altitude (m), g
  *   top centre            heading
  *   centre                the flight-path marker (where the wing is actually going), warnings
@@ -74,9 +74,9 @@ class Side {
     this.dot = el('div', 'dot', elev);
     el('div', 'lab', s2, `${label} wing`);
   }
-  set(thrust: number, trigger: number, elevon: number): void {
+  set(thrust: number, power: number, elevon: number): void {
     this.fill.style.height = `${(Math.max(0, Math.min(1, thrust)) * 144).toFixed(1)}px`;
-    this.tick.style.bottom = `${(Math.max(0, Math.min(1, trigger)) * 144 + 1).toFixed(1)}px`;
+    this.tick.style.bottom = `${(Math.max(0, Math.min(1, power)) * 144 + 1).toFixed(1)}px`;
     // trailing edge up (stick back) shows the dot low, like the stick itself
     this.dot.style.top = `${((1 + Math.max(-1, Math.min(1, elevon))) * 35).toFixed(1)}px`;
   }
@@ -136,13 +136,13 @@ export class Hud {
       <table>
         <tr><td>left stick &#8597;</td><td>left wing</td></tr>
         <tr><td>right stick &#8597;</td><td>right wing</td></tr>
-        <tr><td>LT / RT</td><td>left / right engine</td></tr>
+        <tr><td>RT / LT</td><td>more / less power</td></tr>
         <tr><td>both back / forward</td><td>nose up / down</td></tr>
         <tr><td>one back, one forward</td><td>roll</td></tr>
         <tr><td>START</td><td>pause</td></tr>
       </table>
       <p>Centred sticks keep flying where the nose points. Bank to turn, pull to tighten.<br>
-      Keyboard: W/S and &#8593;/&#8595; for the wings, Left/Right Shift for the engines.</p>`,
+      Keyboard: W/S and &#8593;/&#8595; for the wings, Right/Left Shift for more/less power.</p>`,
     );
     this.hint = el('div', 'hint', this.root);
     this.dev = el('div', 'dev', this.root);
@@ -176,15 +176,15 @@ export class Hud {
     e.innerHTML = s;
   }
 
-  update(s: FlightState, c: ControlFrame, camera: THREE.Camera, dt: number, opts: { paused: boolean; respawnIn: number; soundLocked: boolean; menuOpen?: boolean; inRun?: boolean }): void {
+  update(s: FlightState, c: ControlFrame, camera: THREE.Camera, dt: number, opts: { paused: boolean; respawnIn: number; soundLocked: boolean; menuOpen?: boolean; inRun?: boolean; power: number }): void {
     this.text(this.spd, 'spd', Math.round(s.airspeed * 3.6).toString());
     this.text(this.alt, 'alt', Math.round(s.altitude).toString());
     this.text(this.g, 'g', (Math.abs(s.g) < 0.05 ? 0 : s.g).toFixed(1));
     const hdg = Math.round(((s.headingDeg % 360) + 360) % 360) % 360;
     const card = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(hdg / 45) % 8];
     this.text(this.hdg, 'hdg', `${card.padEnd(2, ' ')} ${hdg.toString().padStart(3, '0')}°`);
-    this.sides[0].set(s.thrust[0] / 11000, c.engineLeft, s.elevons[0]);
-    this.sides[1].set(s.thrust[1] / 11000, c.engineRight, s.elevons[1]);
+    this.sides[0].set(s.thrust[0] / 11000, opts.power, s.elevons[0]);
+    this.sides[1].set(s.thrust[1] / 11000, opts.power, s.elevons[1]);
 
     // flight-path marker: where the velocity vector meets the screen
     const show = this.fpmOn && !s.crashed && s.speed > 20;

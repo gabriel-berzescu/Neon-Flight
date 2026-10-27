@@ -13,7 +13,7 @@
 import * as THREE from 'three';
 import { createSim } from './fdm/jsbsim';
 import { Flight, type GroundFn } from './flight/flight';
-import { Controls } from './input/controls';
+import { Controls, stepPower, throttleFor } from './input/controls';
 import { AircraftView } from './render/aircraft';
 import { Burst } from './render/burst';
 import { ChaseCamera } from './render/chase-camera';
@@ -51,7 +51,7 @@ export interface World {
 
 const SPAWN_AGL = 550;
 const SPAWN_SPEED = 150;
-/** Engines hold this until the player first touches a trigger (so the help card can be read in flight). */
+/** The power a free flight starts with (level flight, so the help card can be read). */
 const SPAWN_ENGINES = 0.55;
 const RESPAWN_DELAY = 3.5;
 const RUN_SPEED = 150;
@@ -90,7 +90,8 @@ export class Game {
   private countdown = 0;
   private resultsIn = Infinity;
   private respawnIn = 0;
-  private holdEngines = SPAWN_ENGINES;
+  /** The power setting of both engines (0..1, the thrust fraction): the triggers move it, and it stays where it is left. */
+  private power = SPAWN_ENGINES;
   private wasCrashed = false;
   private readonly lastPos = new THREE.Vector3();
   private time = 0;
@@ -143,7 +144,7 @@ export class Game {
   /** A new free flight above (x, z), heading `heading` degrees. */
   spawn(x: number, z: number, heading: number): void {
     this.flight.spawn({ x, z, agl: SPAWN_AGL, heading, speed: SPAWN_SPEED, engines: SPAWN_ENGINES });
-    this.holdEngines = SPAWN_ENGINES;
+    this.power = SPAWN_ENGINES;
     this.afterSpawn();
   }
 
@@ -166,7 +167,7 @@ export class Game {
     this.showFlight();
     this.run = new CanyonRun(c);
     this.flight.spawn({ x: c.start.x, z: c.start.z, agl: 0, y: c.start.y, heading: c.start.heading, speed: RUN_SPEED, engines: RUN_ENGINES });
-    this.holdEngines = RUN_ENGINES;
+    this.power = RUN_ENGINES;
     this.afterSpawn();
     this.countdown = COUNTDOWN;
     this.resultsIn = Infinity;
@@ -409,20 +410,21 @@ export class Game {
       return;
     }
 
+    // the power moves in flight and during a run's countdown (to set it before the start), not in a menu
+    if (!this.paused && !this.menu.isOpen) this.power = stepPower(this.power, c.powerUp, c.powerDown, dt);
     const frozen = this.paused || this.countdown > 0;
     this.quality.frame(dt, !frozen && !f.state.crashed);
     if (!frozen) {
       this.time += dt;
-      if (c.engineLeft > 0.08 || c.engineRight > 0.08) this.holdEngines = 0;
-      const hold = Math.sqrt(this.holdEngines);
+      const throttle = throttleFor(this.power);
       const ap = this.autopilot && this.run ? autopilot(f.state, this.run.canyon.gates[this.run.next], this.run.canyon, this.run.progress) : null;
       f.update(
         dt,
         ap ?? {
           stickLeft: c.stickLeft,
           stickRight: c.stickRight,
-          throttleLeft: Math.max(c.throttleLeft, hold),
-          throttleRight: Math.max(c.throttleRight, hold),
+          throttleLeft: throttle,
+          throttleRight: throttle,
         },
       );
       const s = f.state;
@@ -473,6 +475,7 @@ export class Game {
       soundLocked: this.sound.locked,
       menuOpen: this.menu.isOpen,
       inRun: this.mode === 'canyon',
+      power: this.power,
     });
     this.sound.update(s, frozen);
     this.stage.render();
@@ -482,14 +485,15 @@ export class Game {
 const CONTROLS_HTML = `<table>
 <tr><td>left stick &#8597;</td><td>left wing</td></tr>
 <tr><td>right stick &#8597;</td><td>right wing</td></tr>
-<tr><td>LT / RT</td><td>left / right engine</td></tr>
+<tr><td>RT / LT</td><td>more / less power</td></tr>
 <tr><td>both back / forward</td><td>nose up / down</td></tr>
 <tr><td>one back, one forward</td><td>roll</td></tr>
 <tr><td>START</td><td>pause menu</td></tr>
 </table>
 <p>Centred sticks keep flying where the nose points; a bank up to 60&deg; holds a level turn, pull to tighten it.
-One engine alone yaws the wing a little. The flight-path marker shows where you are really going: put it on a gate.</p>
-<p>Keyboard: W/S and &#8593;/&#8595; for the wings, Left/Right Shift for the engines, Esc to pause.</p>`;
+The power stays where you leave it; the harder the pull, the faster it moves.
+The flight-path marker shows where you are really going: put it on a gate.</p>
+<p>Keyboard: W/S and &#8593;/&#8595; for the wings, Right/Left Shift for more/less power, Esc to pause.</p>`;
 
 const CREDITS_HTML = `<p><b>Idea, design and test flights</b><br>Gabriel Berzescu</p>
 <p><b>Built by</b><br>Claude (Opus 5.5, Anthropic), with Claude helpers for the terrain, the sky and the canyons</p>

@@ -3,29 +3,27 @@
  *
  *   left stick  Y  -> left wing   (stickLeft:  -1 pushed forward .. +1 pulled back)
  *   right stick Y  -> right wing  (stickRight: the same)
- *   left trigger   -> left engine  (engineLeft:  0..1)
- *   right trigger  -> right engine (engineRight: 0..1)
+ *   right trigger  -> more power, both engines (powerUp:   0..1, how hard it is pulled)
+ *   left trigger   -> less power               (powerDown: 0..1)
  * The sticks' X axes do nothing. Start (or Esc / P) pauses.
  *
  * Keyboard (fallback, mirrors the pad): W / S = left stick forward / back, Up / Down = right stick forward / back,
- * Left Shift = left engine, Right Shift = right engine, Space = both engines.
+ * Right Shift = more power, Left Shift = less power.
  *
  * Stick values get a radial-free dead zone and a mild expo curve (fine control near the centre, full deflection at the end).
- * Trigger values are mapped so thrust grows linearly with the trigger: a turbojet's thrust grows with the square of its spool
- * speed, and the throttle sets the spool speed, so the throttle is the square root of the trigger.
+ * The triggers move the power setting rather than being it, so it stays where it is left, like a throttle lever (stepPower;
+ * the game keeps the setting). Power is the thrust fraction: a turbojet's thrust grows with the square of its spool speed,
+ * and the JSBSim throttle sets the spool speed, so the throttle is the square root of the power (throttleFor).
  */
 
 export interface FlightControls {
   stickLeft: number;
   stickRight: number;
-  engineLeft: number;
-  engineRight: number;
+  powerUp: number;
+  powerDown: number;
 }
 
 export interface ControlFrame extends FlightControls {
-  /** Throttle commands for JSBSim (0..1), already shaped from the triggers. */
-  throttleLeft: number;
-  throttleRight: number;
   /** Pause pressed this frame (edge). */
   pause: boolean;
   /** Menu navigation, edges this frame (the D-pad, A / B / X; the arrow keys, Enter, Escape / Backspace, R). Menus only. */
@@ -49,6 +47,8 @@ export const STICK_DEADZONE = 0.08;
 /** 0 = linear, 1 = cubic. */
 export const STICK_EXPO = 0.5;
 export const TRIGGER_DEADZONE = 0.02;
+/** How fast a fully pulled trigger moves the power (per second: idle to full in about 1.4 s); a lighter pull, with its square. */
+export const POWER_RATE = 0.7;
 
 /** F310 standard mapping indices. */
 const AXIS_LEFT_Y = 1;
@@ -75,16 +75,22 @@ export function shapeTrigger(v: number): number {
   return Math.min(1, (v - TRIGGER_DEADZONE) / (1 - TRIGGER_DEADZONE));
 }
 
-/** Trigger (thrust fraction) -> JSBSim throttle (spool fraction). */
-export function throttleFor(engine: number): number {
-  return Math.sqrt(Math.max(0, Math.min(1, engine)));
+/** The power setting after `dt` seconds of these trigger pulls (both pulled: the difference). */
+export function stepPower(power: number, up: number, down: number, dt: number): number {
+  return Math.max(0, Math.min(1, power + (up * up - down * down) * POWER_RATE * dt));
 }
 
-const KEYS = new Set(['KeyW', 'KeyS', 'ArrowUp', 'ArrowDown', 'ShiftLeft', 'ShiftRight', 'Space', 'Escape', 'KeyP', 'Enter', 'NumpadEnter', 'Backspace', 'KeyR']);
+/** Power (thrust fraction) -> JSBSim throttle (spool fraction). */
+export function throttleFor(power: number): number {
+  return Math.sqrt(Math.max(0, Math.min(1, power)));
+}
+
+const KEYS = new Set(['KeyW', 'KeyS', 'ArrowUp', 'ArrowDown', 'ShiftLeft', 'ShiftRight', 'Escape', 'KeyP', 'Enter', 'NumpadEnter', 'Backspace', 'KeyR']);
 /** Keyboard ramps (per second). */
 const KEY_STICK_RATE = 3.0;
 const KEY_STICK_RETURN = 5.0;
-const KEY_ENGINE_RATE = 1.5;
+/** A held key presses its trigger in by this much per second, so a tap moves the power a little. */
+const KEY_POWER_RATE = 3.0;
 
 function approach(v: number, target: number, up: number, down: number, dt: number): number {
   const rate = Math.abs(target) > Math.abs(v) || Math.sign(target) !== Math.sign(v) ? up : down;
@@ -95,7 +101,7 @@ function approach(v: number, target: number, up: number, down: number, dt: numbe
 
 export class Controls {
   readonly frame: ControlFrame = {
-    stickLeft: 0, stickRight: 0, engineLeft: 0, engineRight: 0, throttleLeft: 0, throttleRight: 0,
+    stickLeft: 0, stickRight: 0, powerUp: 0, powerDown: 0,
     pause: false, nav: { up: false, down: false, confirm: false, back: false, retry: false }, active: false, device: 'none', padName: null,
   };
   private readonly held = new Set<string>();
@@ -103,7 +109,7 @@ export class Controls {
   private startWasDown = false;
   private navWasDown: boolean[] = [false, false, false, false, false];
   private navPending = { up: false, down: false, confirm: false, back: false, retry: false };
-  private kb = { l: 0, r: 0, el: 0, er: 0 };
+  private kb = { l: 0, r: 0, up: 0, down: 0 };
   private lastPadActivity = -Infinity;
   private lastKeyActivity = -Infinity;
   private time = 0;
@@ -157,41 +163,39 @@ export class Controls {
   poll(dt: number): ControlFrame {
     this.time += dt;
     const f = this.frame;
-    const prev = { l: f.stickLeft, r: f.stickRight, el: f.engineLeft, er: f.engineRight };
+    const prev = { l: f.stickLeft, r: f.stickRight, up: f.powerUp, down: f.powerDown };
 
     // keyboard state (always tracked, so switching devices is seamless)
     const h = this.held;
     const kl = (h.has('KeyS') ? 1 : 0) - (h.has('KeyW') ? 1 : 0);
     const kr = (h.has('ArrowDown') ? 1 : 0) - (h.has('ArrowUp') ? 1 : 0);
-    const kel = h.has('ShiftLeft') || h.has('Space') ? 1 : 0;
-    const ker = h.has('ShiftRight') || h.has('Space') ? 1 : 0;
+    const kup = h.has('ShiftRight');
+    const kdown = h.has('ShiftLeft');
     const kb = this.kb;
     kb.l = approach(kb.l, kl, KEY_STICK_RATE, KEY_STICK_RETURN, dt);
     kb.r = approach(kb.r, kr, KEY_STICK_RATE, KEY_STICK_RETURN, dt);
-    kb.el = approach(kb.el, kel, KEY_ENGINE_RATE, KEY_ENGINE_RATE, dt);
-    kb.er = approach(kb.er, ker, KEY_ENGINE_RATE, KEY_ENGINE_RATE, dt);
+    kb.up = kup ? Math.min(1, kb.up + KEY_POWER_RATE * dt) : 0;
+    kb.down = kdown ? Math.min(1, kb.down + KEY_POWER_RATE * dt) : 0;
 
     const pad = this.pad();
-    let pl = 0, pr = 0, pel = 0, per = 0;
+    let pl = 0, pr = 0, pup = 0, pdown = 0;
     let start = false;
     if (pad) {
       pl = shapeStick(pad.axes[AXIS_LEFT_Y] ?? 0);
       pr = shapeStick(pad.axes[AXIS_RIGHT_Y] ?? 0);
-      pel = shapeTrigger(pad.buttons[BTN_LT]?.value ?? 0);
-      per = shapeTrigger(pad.buttons[BTN_RT]?.value ?? 0);
+      pup = shapeTrigger(pad.buttons[BTN_RT]?.value ?? 0);
+      pdown = shapeTrigger(pad.buttons[BTN_LT]?.value ?? 0);
       start = !!pad.buttons[BTN_START]?.pressed;
-      if (pl !== 0 || pr !== 0 || pel > 0.05 || per > 0.05 || start) this.lastPadActivity = this.time;
+      if (pl !== 0 || pr !== 0 || pup > 0.05 || pdown > 0.05 || start) this.lastPadActivity = this.time;
     }
     const usePad = pad !== null && this.lastPadActivity >= this.lastKeyActivity;
     if (usePad) {
-      f.stickLeft = pl; f.stickRight = pr; f.engineLeft = pel; f.engineRight = per;
+      f.stickLeft = pl; f.stickRight = pr; f.powerUp = pup; f.powerDown = pdown;
       f.device = 'gamepad';
     } else {
-      f.stickLeft = kb.l; f.stickRight = kb.r; f.engineLeft = kb.el; f.engineRight = kb.er;
+      f.stickLeft = kb.l; f.stickRight = kb.r; f.powerUp = kb.up; f.powerDown = kb.down;
       f.device = pad || this.lastKeyActivity > -Infinity ? 'keyboard' : 'none';
     }
-    f.throttleLeft = throttleFor(f.engineLeft);
-    f.throttleRight = throttleFor(f.engineRight);
     f.padName = pad ? pad.id.replace(/\s*\(.*$/, '').trim() || 'Gamepad' : null;
 
     f.pause = this.pausePending || (start && !this.startWasDown);
@@ -210,7 +214,7 @@ export class Controls {
     f.active =
       f.pause ||
       Math.abs(f.stickLeft - prev.l) > 1e-3 || Math.abs(f.stickRight - prev.r) > 1e-3 ||
-      Math.abs(f.engineLeft - prev.el) > 1e-3 || Math.abs(f.engineRight - prev.er) > 1e-3;
+      Math.abs(f.powerUp - prev.up) > 1e-3 || Math.abs(f.powerDown - prev.down) > 1e-3;
     return f;
   }
 }

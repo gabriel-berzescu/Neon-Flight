@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Controls, shapeStick, shapeTrigger, throttleFor, type PadLike } from '../src/input/controls';
+import { Controls, POWER_RATE, shapeStick, shapeTrigger, stepPower, throttleFor, type PadLike } from '../src/input/controls';
 
 function fakePad(): PadLike & { axes: number[]; buttons: { pressed: boolean; value: number }[] } {
   return {
@@ -26,7 +26,16 @@ describe('shaping', () => {
     expect(shapeTrigger(1)).toBe(1);
     expect(shapeTrigger(0.51)).toBeCloseTo(0.5, 2);
   });
-  it('throttle is the square root of the trigger (thrust grows with the trigger)', () => {
+  it('the triggers move the power setting, which stays where it is left', () => {
+    expect(stepPower(0.2, 1, 0, 1)).toBeCloseTo(0.2 + POWER_RATE, 9); // full RT for a second
+    expect(stepPower(0.5, 0, 1, 0.5)).toBeCloseTo(0.5 - POWER_RATE / 2, 9); // full LT for half a second
+    expect(stepPower(0.5, 0.3, 0, 1)).toBeCloseTo(0.5 + 0.09 * POWER_RATE, 9); // a light pull: fine steps
+    expect(stepPower(0.5, 0.6, 0.6, 1)).toBe(0.5); // both: they cancel
+    expect(stepPower(0.4, 0, 0, 10)).toBe(0.4); // let go: stays
+    expect(stepPower(0.9, 1, 0, 1)).toBe(1);
+    expect(stepPower(0.1, 0, 1, 1)).toBe(0);
+  });
+  it('throttle is the square root of the power (thrust grows with the power)', () => {
     expect(throttleFor(0.25)).toBeCloseTo(0.5, 9);
     expect(throttleFor(1)).toBe(1);
     expect(throttleFor(-1)).toBe(0);
@@ -47,9 +56,8 @@ describe('Controls', () => {
     expect(f.device).toBe('gamepad');
     expect(f.stickLeft).toBeCloseTo(1, 9);
     expect(f.stickRight).toBeCloseTo(-1, 9);
-    expect(f.engineLeft).toBe(1);
-    expect(f.engineRight).toBeCloseTo(0.245, 2);
-    expect(f.throttleRight).toBeCloseTo(Math.sqrt(f.engineRight), 9);
+    expect(f.powerDown).toBe(1); // LT
+    expect(f.powerUp).toBeCloseTo(0.245, 2); // RT
     expect(f.padName).toBe('Logitech Gamepad F310');
   });
   it('Start pauses on the press, once', () => {
@@ -61,7 +69,7 @@ describe('Controls', () => {
     pad.buttons[9].pressed = false;
     expect(c.poll(0.016).pause).toBe(false);
   });
-  it('keyboard: W/S and Up/Down ramp the sticks, Shift the engines', () => {
+  it('keyboard: W/S and Up/Down ramp the sticks, Left Shift less power', () => {
     const target = new EventTarget();
     const c = new Controls(() => [], target);
     const key = (code: string, down: boolean) => {
@@ -80,8 +88,10 @@ describe('Controls', () => {
     for (let i = 0; i < 30; i++) f = c.poll(0.1);
     expect(f.stickLeft).toBe(1);
     expect(f.stickRight).toBe(-1);
-    expect(f.engineLeft).toBe(1);
-    expect(f.engineRight).toBe(0);
+    expect(f.powerDown).toBe(1);
+    expect(f.powerUp).toBe(0);
+    key('ShiftLeft', false);
+    expect(c.poll(0.1).powerDown).toBe(0);
     key('KeyS', false);
     for (let i = 0; i < 5; i++) f = c.poll(0.1);
     expect(f.stickLeft).toBe(0);

@@ -18,22 +18,23 @@ System, Display, Graphics, then set Chrome to High performance.
 
 ## Controls
 
-Four controls, nothing else. Each stick moves one wing, each trigger is one engine.
+Four controls, nothing else. Each stick moves one wing; the triggers set the power of both engines.
 
 | Control | Does |
 |---|---|
 | Left stick, up/down | left wing (its elevon) |
 | Right stick, up/down | right wing |
-| Left trigger | left engine |
-| Right trigger | right engine |
+| Right trigger | more power |
+| Left trigger | less power |
 | Start | pause menu (resume, canyon run, settings, main menu) |
 
 - Both sticks back pulls the nose up; both forward pushes it down.
 - One back and one forward rolls the wing (left back + right forward rolls left).
-- One engine alone yaws the wing a little toward the idle side.
+- The power stays where you leave it, like a throttle lever: the harder you pull a trigger, the faster it moves (idle to
+  full in about 1.4 s at full pull). The tick on each engine bar shows the setting; the bar is the thrust, spooling to it.
 - The sticks' left/right axes do nothing.
 
-Keyboard, as a fallback: W/S is the left stick, Up/Down the right stick, Left/Right Shift the engines (Space for both).
+Keyboard, as a fallback: W/S is the left stick, Up/Down the right stick, Right/Left Shift more/less power.
 
 A fly-by-wire sits between the sticks and the elevons, as in a modern fighter:
 - Centred sticks keep the wing flying where its nose points, at any speed and any attitude, so there's no trim to manage.

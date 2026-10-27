@@ -9,7 +9,6 @@
 import * as THREE from 'three';
 import type { JSBSimSim } from '../fdm/jsbsim';
 import { FT, KT, latLonToWorld, worldToLatLon } from '../world/coords';
-import type { ControlFrame } from '../input/controls';
 import { attitudeToQuaternion } from './attitude';
 
 export const PHYSICS_HZ = 120;
@@ -20,6 +19,14 @@ const CONTACTS = 8;
 
 /** Terrain + sea surface height at world (x, z), metres. */
 export type GroundFn = (x: number, z: number) => number;
+
+/** What the aircraft is flown with: the two elevon sticks (-1 forward .. +1 back) and each engine's JSBSim throttle (0..1). */
+export interface FlightInput {
+  stickLeft: number;
+  stickRight: number;
+  throttleLeft: number;
+  throttleRight: number;
+}
 
 export interface SpawnOptions {
   x: number;
@@ -32,7 +39,7 @@ export interface SpawnOptions {
   heading: number;
   /** True airspeed (m/s). */
   speed: number;
-  /** Initial engine setting for both engines (0..1 trigger), until the player moves the triggers. */
+  /** Initial power for both engines (0..1, the thrust fraction), so they are already spooled. */
   engines?: number;
 }
 
@@ -164,7 +171,7 @@ export class Flight {
   }
 
   /** Advance by real time `dt` with these controls; returns the number of physics steps taken. */
-  update(dt: number, c: Pick<ControlFrame, 'stickLeft' | 'stickRight' | 'throttleLeft' | 'throttleRight'> | null): number {
+  update(dt: number, c: FlightInput | null): number {
     if (this.crashed) {
       this.readState(1);
       return 0;
