@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Controls, POWER_RATE, shapeStick, shapeTrigger, stepPower, throttleFor, type PadLike } from '../src/input/controls';
+import { loadSettings, nextRoll, ROLL_RATE } from '../src/settings';
 
 function fakePad(): PadLike & { axes: number[]; buttons: { pressed: boolean; value: number }[] } {
   return {
@@ -95,5 +96,19 @@ describe('Controls', () => {
     key('KeyS', false);
     for (let i = 0; i < 5; i++) f = c.poll(0.1);
     expect(f.stickLeft).toBe(0);
+  });
+});
+
+describe('settings', () => {
+  it('roll settings: four, slowest first, and the old names read back as the new', () => {
+    const store = new Map<string, string>();
+    (globalThis as { localStorage?: unknown }).localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v) };
+    expect(Object.values(ROLL_RATE)).toEqual([1.05, 1.75, 2.6, 4.0]);
+    expect(nextRoll('fighter')).toBe('glide');
+    for (const [old, now] of [['gentle', 'cruise'], ['calm', 'sport'], ['sharp', 'fighter'], ['bogus', 'sport']]) {
+      store.set('neon-flight.settings', JSON.stringify({ roll: old }));
+      expect(loadSettings().roll).toBe(now);
+    }
+    delete (globalThis as { localStorage?: unknown }).localStorage;
   });
 });

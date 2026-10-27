@@ -46,7 +46,7 @@ A fly-by-wire sits between the sticks and the elevons, as in a modern fighter:
 The game opens on its title screen: the logo over a slow flight across the land toward the sun. From there: **Free flight**,
 **Canyon run** (your best score beside it), **Settings**, **Controls** and **Credits**. Settings, kept in the browser:
 - **Graphics:** Auto adapts to the GPU, or pick a fixed level from lowest to high.
-- **Roll response:** gentle (100°/s at full stick), calm (150°/s) or sharp (230°/s).
+- **Roll response:** how fast full stick rolls the wing: glide (60°/s), cruise (100°/s), sport (150°/s) or fighter (230°/s).
 - **Sound volume.**
 - **Flight-path marker:** on or off.
 
