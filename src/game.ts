@@ -29,7 +29,7 @@ import { generateCanyon, newCanyonSeed, type Canyon } from './world/canyon';
 import { CanyonRun } from './game/canyon-run';
 import { autopilot } from './game/autopilot';
 import { TitleCamera } from './render/title-camera';
-import { loadSettings, ROLL_RATE, saveSettings, type Settings } from './settings';
+import { loadSettings, nextRoll, ROLL_LABEL, ROLL_RATE, saveSettings, type Settings } from './settings';
 
 /** Something in the world that follows the camera (terrain, sky). */
 export interface WorldView {
@@ -259,7 +259,7 @@ export class Game {
       back: 'back',
       choices: [
         { id: 'set:quality', label: `graphics: ${this.qualityFromUrl ? 'fixed by the url' : q}` },
-        { id: 'set:roll', label: `roll response: ${s.roll === 'calm' ? 'calm (150°/s)' : 'sharp (230°/s)'}` },
+        { id: 'set:roll', label: `roll response: ${ROLL_LABEL[s.roll]}` },
         { id: 'set:volume', label: `sound: ${Math.round(s.volume * 100)}%` },
         { id: 'set:fpm', label: `flight-path marker: ${s.fpm ? 'on' : 'off'}` },
         { id: 'back', label: 'back', key: 'B' },
@@ -271,7 +271,7 @@ export class Game {
     const s = this.settings;
     const order: Settings['quality'][] = ['auto', 3, 2, 1, 0];
     if (key === 'quality') s.quality = order[(order.indexOf(s.quality) + 1) % order.length];
-    else if (key === 'roll') s.roll = s.roll === 'calm' ? 'sharp' : 'calm';
+    else if (key === 'roll') s.roll = nextRoll(s.roll);
     else if (key === 'volume') s.volume = s.volume >= 0.99 ? 0 : Math.round((s.volume + 0.2) * 10) / 10;
     else if (key === 'fpm') s.fpm = !s.fpm;
     saveSettings(s);

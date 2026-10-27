@@ -8,7 +8,7 @@ WebAssembly and running in the browser.
 
 **Smoothest on Windows: `play.bat`** (needs [Node.js](https://nodejs.org)). Double-click it in a copy of this repository: it
 builds the game if needed, serves it locally and opens it fullscreen in its own Chrome window on the fast GPU, with sound on
-from the start; closing the window stops it. On a laptop with two GPUs, a browser tab usually runs on the slower integrated
+from the start; Alt+F4 closes it and stops everything. On a laptop with two GPUs, a browser tab usually runs on the slower integrated
 one: measured on an RTX 3050 laptop, the game holds 144 fps on the NVIDIA GPU, against 30 fps on the Intel one at full quality.
 
 The web version adapts to the GPU it gets: on an integrated GPU it starts at lower quality (render resolution, anti-aliasing,
@@ -46,7 +46,7 @@ A fly-by-wire sits between the sticks and the elevons, as in a modern fighter:
 The game opens on its title screen: the logo over a slow flight across the land toward the sun. From there: **Free flight**,
 **Canyon run** (your best score beside it), **Settings**, **Controls** and **Credits**. Settings, kept in the browser:
 - **Graphics:** Auto adapts to the GPU, or pick a fixed level from lowest to high.
-- **Roll response:** calm (150°/s at full stick) or sharp (230°/s).
+- **Roll response:** gentle (100°/s at full stick), calm (150°/s) or sharp (230°/s).
 - **Sound volume.**
 - **Flight-path marker:** on or off.
 
