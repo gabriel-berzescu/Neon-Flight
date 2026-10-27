@@ -2,7 +2,7 @@
 /**
  * One-click launcher: builds the game if needed, serves it locally, and opens it in a dedicated
  * Chrome app window on the high-performance GPU (its own profile, so the flags always apply).
- * Closing the window stops the server.
+ * Closing the window (Alt+F4) stops the server.
  *
  *   node scripts/play.mjs            build if dist/ is missing or stale, then play
  *   node scripts/play.mjs --build    force a fresh build
@@ -94,9 +94,12 @@ const flags = [
   '--disable-features=CalculateNativeWinOcclusion',
   '--no-first-run',
   '--no-default-browser-check',
-  args.has('--window') ? '--window-size=1600,900' : '--start-fullscreen',
+  // --kiosk rather than --start-fullscreen: on a laptop with two GPUs, the fast one waking up for the game (it sleeps when idle)
+  // knocks a --start-fullscreen window back into a window, on the first launch after a pause; kiosk mode stays fullscreen.
+  // Alt+F4 closes it.
+  args.has('--window') ? '--window-size=1600,900' : '--kiosk',
 ];
-console.log('Starting Neon-Flight — close the window to quit.');
+console.log('Starting Neon-Flight — Alt+F4 quits.');
 const chrome = spawn(browser, flags, { stdio: 'ignore' });
 chrome.on('exit', () => {
   if (server) {
